@@ -1,4 +1,4 @@
-<!-- === New England Transit: Live Statistics (filters + load all + same-tab join) === -->
+<!-- === New England Transit: Live Statistics (filters + load all + join w/ manual fallback) === -->
 <style>
   .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
   .net-eyebrow{font-size:.9rem;opacity:.7;letter-spacing:.12em;text-transform:uppercase}
@@ -39,7 +39,7 @@
     <label for="net-place">Place:&nbsp;</label>
     <select id="net-place">
       <option value="79519172222138">Lower Mystic (Public)</option>
-      <!-- Add Hub place when ready -->
+      <!-- Add Hub place when you’re ready -->
     </select>
   </div>
 
@@ -65,6 +65,10 @@
       <div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div></div>
     </div>
     <div id="net-table" class="net-table">Loading servers…</div>
+
+    <!-- Inline fallback banner (shown only if deep link fails) -->
+    <div id="net-fallback" style="display:none;margin-top:8px"></div>
+
     <div class="net-actions">
       <span class="net-hint" id="net-pagehint"></span>
       <button id="net-load" class="btn ghost" style="display:none">Load more</button>
@@ -78,7 +82,7 @@
   const WORKER_BASE = "https://live.contact-b46.workers.dev";
   const UNIVERSE_ID = "8731366500";
   const SERVER_TYPE = "Public";
-  const JOIN_OPEN_NEW_TAB = false; // set true to use a new tab for the web fallback
+  const JOIN_OPEN_NEW_TAB = false; // web fallback opens in same tab by default
 
   // ===== Elements =====
   const placeSelect   = document.getElementById("net-place");
@@ -93,6 +97,7 @@
   const fltFPS        = document.getElementById("flt-fps");
   const fltNonEmpty   = document.getElementById("flt-nonempty");
   const fltReset      = document.getElementById("flt-reset");
+  const fallbackBox   = document.getElementById("net-fallback");
 
   // ===== State =====
   let currentPlaceId = placeSelect.value;
@@ -121,22 +126,52 @@
     return res.json(); // { items, nextPageCursor }
   }
 
-  // ===== Join (same-tab deep link + fallback) =====
-  function joinServer(placeId, jobId) {
-    const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
-    const web  = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
+  // ===== Join (same-tab deep link + manual fallback banner) =====
+  function showFallback(jobId, placeId) {
+    const web = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
+    fallbackBox.innerHTML = `
+      <div style="border:1px solid rgba(0,0,0,.15);border-radius:10px;padding:10px">
+        Having trouble launching Roblox?
+        <button class="btn ghost" id="net-open-web">Open via web launcher</button>
+      </div>
+    `;
+    fallbackBox.style.display = "block";
+    document.getElementById("net-open-web").onclick = () => {
+      if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener");
+      else window.location.href = web;
+    };
+  }
+  function hideFallback() { fallbackBox.style.display = "none"; fallbackBox.innerHTML = ""; }
 
-    // Attempt same-tab app open via window.location
-    const t = Date.now();
+  function joinServer(placeId, jobId) {
+    hideFallback();
+
+    const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
+    let opened = false;
+
+    const onVisibility = () => {
+      if (document.hidden || document.visibilityState === "hidden") {
+        opened = true; cleanup();
+      }
+    };
+    const onPageHide = () => { opened = true; cleanup(); };
+
+    function cleanup() {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    }
+
+    document.addEventListener("visibilitychange", onVisibility, { once: true });
+    window.addEventListener("pagehide", onPageHide, { once: true });
+
+    // Try app deep link in same tab
     window.location.assign(deep);
 
-    // If app isn't caught quickly, navigate to web launcher (same tab by default)
+    // If we’re still here after ~1s, show fallback button (no auto redirect)
     setTimeout(() => {
-      if (Date.now() - t < 1200) {
-        if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener");
-        else window.location.href = web;
-      }
-    }, 900);
+      if (!opened && !document.hidden) showFallback(jobId, placeId);
+      cleanup();
+    }, 1000);
   }
   window.joinServer = joinServer;
 
@@ -196,7 +231,6 @@
 
     tableEl.innerHTML = rows;
 
-    // Load-more / Load-all UI
     const hasMore = !!nextCursor;
     loadBtn.style.display = hasMore ? "inline-flex" : "none";
     loadAllBtn.style.display = hasMore ? "inline-flex" : "none";
@@ -281,7 +315,6 @@
     }
   });
 
-  // Load ALL remaining pages (client-side pagination)
   loadAllBtn.addEventListener("click", async () => {
     if (loading) return;
     try {
@@ -307,7 +340,6 @@
     }
   });
 
-  // Filters wiring
   function onFilterChange() {
     filters.region = fltRegion.value;
     filters.minFps = Number(fltFPS.value || 0);
@@ -329,4 +361,4 @@
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live (filters + load all + same-tab join) === -->
+<!-- === /NET Live (filters + load all + join w/ manual fallback) === -->
