@@ -1,4 +1,4 @@
-<!-- === New England Transit: Live Statistics (v2) === -->
+<!-- === New England Transit: Live Statistics (v2 + KV uptime fallback) === -->
 <style>
   :root{
     --bg:#ffffff; --fg:#0a0a0a; --muted:#50565c;
@@ -45,7 +45,6 @@
     .net-row .net-join{justify-content:flex-end}
   }
 
-  /* Page background */
   .net-bg{background:var(--bg)}
 </style>
 
@@ -147,10 +146,7 @@
   const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   setTheme(savedTheme || (prefersDark ? "dark" : "light"));
   themeBtn.addEventListener("click", ()=> setTheme(rootEl.dataset.theme === "dark" ? "light" : "dark"));
-  function setTheme(mode){
-    rootEl.dataset.theme = mode;
-    localStorage.setItem("net-theme", mode);
-  }
+  function setTheme(mode){ rootEl.dataset.theme = mode; localStorage.setItem("net-theme", mode); }
 
   // ===== State =====
   let currentPlaceId = placeSelect.value;
@@ -214,41 +210,53 @@
   }
   window.joinServer = joinServer;
 
-  // ===== Utils =====
+  // ===== Robust getters + uptime =====
+  function getRegion(s) {
+    return s.region ?? s.serverRegion ?? s.serverLocation ??
+           (s.datacenter && (s.datacenter.region || s.datacenter.name)) ??
+           s.location ?? s.geoLocation ?? null;
+  }
+  function getCreatedISO(s) {
+    // Prefer Roblox timestamps; fall back to KV-provided firstSeenAt
+    return s.created ?? s.createdAt ?? s.startTime ?? s.startedAt ?? s.firstSeenAt ?? null;
+  }
+  function fmtUptime(createdISO){
+    if (!createdISO) return "–";
+    const t = new Date(createdISO);
+    if (isNaN(t.getTime())) return "–";
+    const ms = Date.now() - t.getTime();
+    if (ms < 0) return "–";
+    const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60), d = Math.floor(h/24);
+    if (d > 0) return `${d}d ${h%24}h`;
+    if (h > 0) return `${h}h ${m%60}m`;
+    return `${m}m ${s%60}s`;
+  }
+
+  // ===== Filtering =====
   function applyFilters(list){
     const q = filters.search.trim().toLowerCase();
     return list.filter(s=>{
-      if (filters.region && (s.region ?? "") !== filters.region) return false;
+      if (filters.region && (getRegion(s) ?? "") !== filters.region) return false;
       const fpsVal = (typeof s.fps === "number") ? s.fps : 0;
       if (filters.minFps && fpsVal < filters.minFps) return false;
       if (filters.nonEmpty && (!s.playing || s.playing <= 0)) return false;
       if (q){
         const id = (s.id||"").toLowerCase();
-        const region = (s.region||"").toLowerCase();
+        const region = (getRegion(s)||"").toLowerCase();
         if (!id.includes(q) && !region.includes(q)) return false;
       }
       return true;
     });
   }
   function populateRegionFilter(list){
-    const uniq = Array.from(new Set(list.map(s=>s.region).filter(Boolean))).sort();
+    const uniq = Array.from(new Set(list.map(getRegion).filter(Boolean))).sort();
     const cur = fltRegion.value;
     fltRegion.innerHTML = `<option value="">All</option>` + uniq.map(r=>`<option value="${r}">${r}</option>`).join("");
     if (uniq.includes(cur)) fltRegion.value = cur;
   }
-  function fmtUptime(createdISO){
-    if (!createdISO) return "–";
-    const ms = Date.now() - new Date(createdISO).getTime();
-    if (ms < 0) return "–";
-    const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60);
-    if (h >= 24) return `${Math.floor(h/24)}d ${h%24}h`;
-    if (h > 0) return `${h}h ${m%60}m`;
-    return `${m}m ${s%60}s`;
-  }
 
   // ===== Render =====
   function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
-
   function renderSummary(playersUniverse){
     const filtered = applyFilters(items);
     srvShownEl.textContent   = filtered.length;
@@ -257,22 +265,22 @@
     if (typeof playersUniverse === "number") {
       uPlayersEl.textContent = playersUniverse;
       // Peak tracker
-      const prev = Number(peakStore.val || 0);
+      const PEAK_KEY = "net_peak_universe";
+      const stored = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}");
+      const prev = Number(stored.val || 0);
       if (playersUniverse > prev){
         const when = new Date().toISOString();
         localStorage.setItem(PEAK_KEY, JSON.stringify({ val: playersUniverse, whenISO: when }));
         peakValEl.textContent = playersUniverse;
         peakWhenEl.textContent = `(${new Date(when).toLocaleString()})`;
       } else {
-        peakValEl.textContent = peakStore.val ?? "–";
-        peakWhenEl.textContent = peakStore.whenISO ? `(${new Date(peakStore.whenISO).toLocaleString()})` : "";
+        peakValEl.textContent = stored.val ?? "–";
+        peakWhenEl.textContent = stored.whenISO ? `(${new Date(stored.whenISO).toLocaleString()})` : "";
       }
     }
   }
-
   function renderServers(listRaw=[]){
     const list = applyFilters(listRaw);
-
     if (!listRaw.length){
       tableEl.textContent = "No public servers found.";
       loadBtn.style.display = "none";
@@ -280,18 +288,17 @@
       pageHint.textContent = "";
       return;
     }
-
-    // Desktop table
     const rows = list.map(s=>{
       const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
       const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
-      const region = s.region ?? "–";
-      const uptime = fmtUptime(s.created);
-      const created = s.created ? new Date(s.created).toLocaleTimeString() : "";
+      const region = getRegion(s) ?? "–";
+      const createdISO = getCreatedISO(s);
+      const uptime = fmtUptime(createdISO);
+      const createdTime = createdISO ? new Date(createdISO).toLocaleTimeString() : "";
       const id = s.id || "";
       return `
-        <div class="net-row">
-          <div><span class="net-id">${id.slice(0,8)}…</span><br><small>${created}</small></div>
+        <div class="net-row" title="${region !== '–' ? `Region: ${region}` : 'Region unavailable'}">
+          <div><span class="net-id">${id.slice(0,8)}…</span><br><small>${createdTime}</small></div>
           <div>${players}</div>
           <div>${fps}</div>
           <div>${region}</div>
@@ -329,7 +336,6 @@
       pageHint.textContent = "";
     }finally{ loading = false; }
   }
-
   async function pollFirstPage(){
     if (loading) return;
     try{
@@ -356,7 +362,6 @@
     renderSummary(); renderServers(items);
     bootstrapFirstPage();
   });
-
   loadBtn.addEventListener("click", async ()=>{
     if (!nextCursor || loading) return;
     try{
@@ -371,7 +376,6 @@
     }catch(e){ console.error(e); pageHint.textContent = "Error loading more."; }
     finally{ loadBtn.textContent = "Load more"; loading = false; }
   });
-
   loadAllBtn.addEventListener("click", async ()=>{
     if (loading) return;
     try{
@@ -406,4 +410,4 @@
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live v2 === -->
+<!-- === /NET Live v2 (KV uptime) === -->
