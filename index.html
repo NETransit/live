@@ -1,88 +1,136 @@
-<section class="hero">
-  <div class="container hero-wrap">
-    <div class="copy">
-      <div class="eyebrow">Live Transit Dashboard</div>
-      <h1>New England Transit: Live Statistics</h1>
-      <p class="lead">Real-time Roblox activity across our places. Public servers only.</p>
+<!-- === New England Transit: Live Statistics (drop-in) === -->
+<style>
+  /* minimal styles so it looks OK even without your site CSS */
+  .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .net-eyebrow{font-size:.9rem;opacity:.7;letter-spacing:.12em;text-transform:uppercase}
+  .net-h1{font-size:clamp(24px,3.2vw,40px);margin:.25rem 0 1rem;font-weight:800}
+  .net-lead{color:#333;opacity:.9;margin:.25rem 0 1rem}
+  .net-card{border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:12px;margin-top:10px}
+  .net-hint{font-size:.9rem;opacity:.7}
+  .net-controls{margin:12px 0}
+  .net-table{border-top:1px solid rgba(0,0,0,.15);margin-top:8px}
+  .net-row,.net-head{display:grid;grid-template-columns:1.4fr .8fr .6fr .8fr .6fr;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.08)}
+  .net-head{font-weight:700;border-bottom:2px solid rgba(0,0,0,.25)}
+  .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.15);cursor:pointer;background:#ff7f00;color:#0b0b0b;font-weight:700}
+  .btn:active{transform:translateY(1px)}
+  @media (max-width:760px){ .net-row,.net-head{grid-template-columns:1.6fr .8fr .6fr .8fr 1fr} }
+</style>
 
-      <div id="liveStats" class="card" style="margin-top:16px">
-        <strong>Universe Players:</strong> <span id="uPlayers">–</span> •
-        <strong>Servers Listed:</strong> <span id="srvCount">–</span> •
-        <strong>Players in Listed:</strong> <span id="srvPlayers">–</span>
-        <div class="hint">Auto-updates every 15s</div>
-      </div>
+<section class="net-wrap" id="net-live">
+  <div class="net-eyebrow">Live Transit Dashboard</div>
+  <h1 class="net-h1">New England Transit: Live Statistics</h1>
+  <p class="net-lead">Real-time Roblox activity across our places. Public servers only.</p>
 
-      <div style="margin-top:10px">
-        <label for="place">Place:</label>
-        <select id="place">
-          <option value="79519172222138">Lower Mystic (Public)</option>
-          <!-- If/when you have the Hub's true placeId, add it here -->
-          <!-- <option value="HUB_PLACE_ID">Main Hub (Public)</option> -->
-        </select>
-      </div>
+  <div class="net-card" id="net-summary">
+    <strong>Universe Players:</strong> <span id="uPlayers">–</span> •
+    <strong>Servers Listed:</strong> <span id="srvCount">–</span> •
+    <strong>Players in Listed:</strong> <span id="srvPlayers">–</span>
+    <div class="net-hint">Auto-updates every 15s</div>
+  </div>
+
+  <div class="net-controls">
+    <label for="net-place">Place:&nbsp;</label>
+    <select id="net-place">
+      <option value="79519172222138">Lower Mystic (Public)</option>
+      <!-- Add more places when ready:
+      <option value="HUB_PLACE_ID">Main Hub (Public)</option>
+      -->
+    </select>
+  </div>
+
+  <div class="net-card">
+    <div class="net-head">
+      <div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div></div>
     </div>
-
-    <div class="media">
-      <div class="browser-frame">
-        <div class="browser-chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-        <div class="frame-body">
-          <div id="serverTable">Loading servers…</div>
-        </div>
-      </div>
-    </div>
+    <div id="net-table" class="net-table">Loading servers…</div>
   </div>
 </section>
 
 <script>
-const WORKER_BASE = "https://live.contact-b46.workers.dev";
-const UNIVERSE_ID = "8731366500";
-const SERVER_TYPE = "Public";
-const placeSelect = document.getElementById("place");
+  // ====== Config ======
+  const WORKER_BASE = "https://live.contact-b46.workers.dev"; // your Cloudflare Worker
+  const UNIVERSE_ID = "8731366500";
+  const SERVER_TYPE = "Public";
 
-async function fetchSummary(placeId) {
-  const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("API error");
-  return res.json();
-}
+  // ====== Elements ======
+  const placeSelect = document.getElementById("net-place");
+  const tableEl = document.getElementById("net-table");
+  const uPlayersEl = document.getElementById("uPlayers");
+  const srvCountEl = document.getElementById("srvCount");
+  const srvPlayersEl = document.getElementById("srvPlayers");
 
-function renderServers(items = []) {
-  if (!items.length) {
-    document.getElementById("serverTable").innerHTML = "No public servers found.";
-    return;
+  // Track current place in view (for Join buttons)
+  let currentPlaceId = placeSelect.value;
+  placeSelect.addEventListener("change", () => {
+    currentPlaceId = placeSelect.value;
+    tick();
+  });
+
+  // ====== API calls ======
+  async function fetchSummary(placeId) {
+    const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    return res.json();
   }
-  const header = `<div style="display:grid;grid-template-columns:1.2fr .6fr .6fr .6fr;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.12);font-weight:700">
-      <div>Server</div><div>Players</div><div>FPS</div><div>Region</div>
-    </div>`;
-  const rows = items.map(s => {
-    const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
-    const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
-    const region = s.region ?? "–";
-    const created = s.created ? new Date(s.created).toLocaleTimeString() : "";
-    return `<div style="display:grid;grid-template-columns:1.2fr .6fr .6fr .6fr;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.06)">
-      <div><strong>${(s.id || "").slice(0,8)}…</strong><br><small>${created}</small></div>
-      <div>${players}</div>
-      <div>${fps}</div>
-      <div>${region}</div>
-    </div>`;
-  }).join("");
-  document.getElementById("serverTable").innerHTML = header + rows;
-}
 
-async function tick() {
-  const placeId = placeSelect.value;
-  try {
-    const data = await fetchSummary(placeId);
-    document.getElementById("uPlayers").textContent = data.playersUniverse ?? "–";
-    document.getElementById("srvCount").textContent = data.serversListed ?? "–";
-    document.getElementById("srvPlayers").textContent = data.playersInListedServers ?? "–";
-    renderServers(data.servers || []);
-  } catch (e) {
-    document.getElementById("serverTable").textContent = "Error loading stats.";
-    console.error(e);
+  // ====== Join button handler ======
+  function joinServer(placeId, jobId) {
+    // Try Roblox app deep link, fallback to web launcher
+    const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
+    const web  = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
+    const t = Date.now();
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = deep;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      if (Date.now() - t < 1200) window.open(web, "_blank", "noopener");
+      document.body.removeChild(iframe);
+    }, 900);
   }
-}
-placeSelect.addEventListener("change", tick);
-tick();
-setInterval(tick, 15000);
+
+  // ====== Render ======
+  function renderServers(items = []) {
+    if (!items.length) { tableEl.textContent = "No public servers found."; return; }
+
+    const rows = items.map(s => {
+      const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
+      const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
+      const region = s.region ?? "–";
+      const created = s.created ? new Date(s.created).toLocaleTimeString() : "";
+      const id = s.id || "";
+      return `
+        <div class="net-row">
+          <div><span class="net-id">${id.slice(0,8)}…</span><br><small>${created}</small></div>
+          <div>${players}</div>
+          <div>${fps}</div>
+          <div>${region}</div>
+          <div><button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
+        </div>`;
+    }).join("");
+
+    tableEl.innerHTML = rows;
+  }
+
+  // ====== Tick loop ======
+  async function tick() {
+    try {
+      const data = await fetchSummary(currentPlaceId);
+      uPlayersEl.textContent = data.playersUniverse ?? "–";
+      srvCountEl.textContent = data.serversListed ?? "–";
+      srvPlayersEl.textContent = data.playersInListedServers ?? "–";
+      renderServers(data.servers || []);
+    } catch (err) {
+      console.error(err);
+      tableEl.textContent = "Error loading stats.";
+    }
+  }
+  tick();
+  setInterval(tick, 15000);
+
+  // expose for inline onclick
+  window.joinServer = joinServer;
 </script>
+<!-- === /NET Live block === -->
