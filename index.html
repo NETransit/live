@@ -1,4 +1,4 @@
-<!-- === New England Transit: Live Statistics (with Load more) === -->
+<!-- === New England Transit: Live Statistics (filters + load all + same-tab join) === -->
 <style>
   .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
   .net-eyebrow{font-size:.9rem;opacity:.7;letter-spacing:.12em;text-transform:uppercase}
@@ -6,15 +6,19 @@
   .net-lead{opacity:.85;margin:.25rem 0 1rem}
   .net-card{border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:12px;margin-top:10px}
   .net-hint{font-size:.9rem;opacity:.7}
-  .net-controls{margin:12px 0}
+  .net-controls,.net-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
   .net-table{border-top:1px solid rgba(0,0,0,.15);margin-top:8px}
   .net-row,.net-head{display:grid;grid-template-columns:1.4fr .8fr .6fr .8fr .6fr;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.08)}
   .net-head{font-weight:700;border-bottom:2px solid rgba(0,0,0,.25)}
   .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
   .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.15);cursor:pointer;background:#ff7f00;color:#0b0b0b;font-weight:700}
-  .btn:active{transform:translateY(1px)}
   .btn.ghost{background:#fff}
+  .btn:active{transform:translateY(1px)}
   .net-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 0}
+  .chip{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid rgba(0,0,0,.12);border-radius:999px;font-size:.9rem}
+  input[type=number]{width:90px;padding:6px;border-radius:8px;border:1px solid rgba(0,0,0,.2)}
+  select{padding:6px;border-radius:8px;border:1px solid rgba(0,0,0,.2)}
+  label{font-size:.95rem}
   @media (max-width:760px){ .net-row,.net-head{grid-template-columns:1.6fr .8fr .6fr .8fr 1fr} }
 </style>
 
@@ -27,15 +31,33 @@
     <strong>Universe Players:</strong> <span id="uPlayers">–</span> •
     <strong>Servers Shown:</strong> <span id="srvShown">–</span> •
     <strong>Players in Shown:</strong> <span id="srvPlayers">–</span>
-    <div class="net-hint">Auto-updates every 15s (appends new first page)</div>
+    <div class="net-hint">Auto-updates every 15s (refreshes page-1 rows)</div>
   </div>
 
+  <!-- Place selector -->
   <div class="net-controls">
     <label for="net-place">Place:&nbsp;</label>
     <select id="net-place">
       <option value="79519172222138">Lower Mystic (Public)</option>
-      <!-- Add the hub place when you’re ready -->
+      <!-- Add Hub place when ready -->
     </select>
+  </div>
+
+  <!-- Filters -->
+  <div class="net-filters">
+    <label>Region:
+      <select id="flt-region">
+        <option value="">All</option>
+        <!-- dynamic unique regions will be added -->
+      </select>
+    </label>
+    <label>Min FPS:
+      <input id="flt-fps" type="number" step="1" min="0" placeholder="0">
+    </label>
+    <label class="chip">
+      <input id="flt-nonempty" type="checkbox"> Only non-empty
+    </label>
+    <button id="flt-reset" class="btn ghost">Reset filters</button>
   </div>
 
   <div class="net-card">
@@ -46,42 +68,42 @@
     <div class="net-actions">
       <span class="net-hint" id="net-pagehint"></span>
       <button id="net-load" class="btn ghost" style="display:none">Load more</button>
+      <button id="net-loadall" class="btn ghost" style="display:none">Load all</button>
     </div>
   </div>
 </section>
 
 <script>
-  // ====== Config ======
+  // ===== Config =====
   const WORKER_BASE = "https://live.contact-b46.workers.dev";
   const UNIVERSE_ID = "8731366500";
   const SERVER_TYPE = "Public";
+  const JOIN_OPEN_NEW_TAB = false; // set true to use a new tab for the web fallback
 
-  // ====== Elements ======
+  // ===== Elements =====
   const placeSelect   = document.getElementById("net-place");
   const tableEl       = document.getElementById("net-table");
   const uPlayersEl    = document.getElementById("uPlayers");
   const srvShownEl    = document.getElementById("srvShown");
   const srvPlayersEl  = document.getElementById("srvPlayers");
   const loadBtn       = document.getElementById("net-load");
+  const loadAllBtn    = document.getElementById("net-loadall");
   const pageHint      = document.getElementById("net-pagehint");
+  const fltRegion     = document.getElementById("flt-region");
+  const fltFPS        = document.getElementById("flt-fps");
+  const fltNonEmpty   = document.getElementById("flt-nonempty");
+  const fltReset      = document.getElementById("flt-reset");
 
-  // ====== State ======
+  // ===== State =====
   let currentPlaceId = placeSelect.value;
-  let items = [];               // accumulated servers
-  let nextCursor = null;        // for pagination
+  let items = [];               // accumulated raw servers
+  let nextCursor = null;        // pagination cursor for /api/servers
   let loading = false;
 
-  placeSelect.addEventListener("change", () => {
-    currentPlaceId = placeSelect.value;
-    // reset state on place switch
-    items = [];
-    nextCursor = null;
-    renderSummary();
-    renderServers(items);
-    bootstrapFirstPage();       // fetch fresh page 1 + summary
-  });
+  // Filters state
+  const filters = { region: "", minFps: 0, nonEmpty: false };
 
-  // ====== API ======
+  // ===== API =====
   async function fetchSummary(placeId) {
     const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
     const res = await fetch(url, { cache: "no-store" });
@@ -96,35 +118,65 @@
     if (cursor) url.searchParams.set("cursor", cursor);
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) throw new Error(`API ${res.status}`);
-    return res.json(); // { items: [...], nextPageCursor }
+    return res.json(); // { items, nextPageCursor }
   }
 
-  // ====== Join handler ======
+  // ===== Join (same-tab deep link + fallback) =====
   function joinServer(placeId, jobId) {
     const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
     const web  = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
+
+    // Attempt same-tab app open via window.location
     const t = Date.now();
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = deep;
-    document.body.appendChild(iframe);
+    window.location.assign(deep);
+
+    // If app isn't caught quickly, navigate to web launcher (same tab by default)
     setTimeout(() => {
-      if (Date.now() - t < 1200) window.open(web, "_blank", "noopener");
-      document.body.removeChild(iframe);
+      if (Date.now() - t < 1200) {
+        if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener");
+        else window.location.href = web;
+      }
     }, 900);
   }
-  window.joinServer = joinServer; // used by inline onclick
+  window.joinServer = joinServer;
 
-  // ====== Render ======
+  // ===== Filtering =====
+  function applyFilters(list) {
+    return list.filter(s => {
+      if (filters.region && (s.region ?? "") !== filters.region) return false;
+      const fpsVal = (typeof s.fps === "number") ? s.fps : 0;
+      if (filters.minFps && fpsVal < filters.minFps) return false;
+      if (filters.nonEmpty && (!s.playing || s.playing <= 0)) return false;
+      return true;
+    });
+  }
+
+  function populateRegionFilter(list) {
+    const uniq = Array.from(new Set(list.map(s => s.region).filter(Boolean))).sort();
+    const current = fltRegion.value;
+    fltRegion.innerHTML = `<option value="">All</option>` + uniq.map(r => `<option value="${r}">${r}</option>`).join("");
+    if (uniq.includes(current)) fltRegion.value = current;
+  }
+
+  // ===== Render =====
   function renderSummary() {
-    const shown = items.length;
-    const playersShown = items.reduce((n, s) => n + (s.playing ?? 0), 0);
+    const filtered = applyFilters(items);
+    const shown = filtered.length;
+    const playersShown = filtered.reduce((n, s) => n + (s.playing ?? 0), 0);
     srvShownEl.textContent = shown;
     srvPlayersEl.textContent = playersShown;
   }
 
-  function renderServers(list = []) {
-    if (!list.length) { tableEl.textContent = "No public servers found."; loadBtn.style.display = "none"; pageHint.textContent = ""; return; }
+  function renderServers(listRaw = []) {
+    const list = applyFilters(listRaw);
+
+    if (!listRaw.length) {
+      tableEl.textContent = "No public servers found.";
+      loadBtn.style.display = "none";
+      loadAllBtn.style.display = "none";
+      pageHint.textContent = "";
+      return;
+    }
 
     const rows = list.map(s => {
       const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
@@ -143,17 +195,15 @@
     }).join("");
 
     tableEl.innerHTML = rows;
-    // Load-more UI
-    if (nextCursor) {
-      loadBtn.style.display = "inline-flex";
-      pageHint.textContent = "More servers available";
-    } else {
-      loadBtn.style.display = "none";
-      pageHint.textContent = "All servers loaded";
-    }
+
+    // Load-more / Load-all UI
+    const hasMore = !!nextCursor;
+    loadBtn.style.display = hasMore ? "inline-flex" : "none";
+    loadAllBtn.style.display = hasMore ? "inline-flex" : "none";
+    pageHint.textContent = hasMore ? "More servers available" : "All servers loaded";
   }
 
-  // ====== Bootstrapping & polling ======
+  // ===== Bootstrapping & polling =====
   async function bootstrapFirstPage() {
     try {
       loading = true;
@@ -161,40 +211,52 @@
       const summary = await fetchSummary(currentPlaceId);
       uPlayersEl.textContent = summary.playersUniverse ?? "–";
 
-      // take page 1 from summary
       items = Array.isArray(summary.servers) ? summary.servers : [];
       nextCursor = summary.nextCursor || null;
 
+      populateRegionFilter(items);
       renderSummary();
       renderServers(items);
     } catch (e) {
       console.error(e);
       tableEl.textContent = "Error loading stats.";
       loadBtn.style.display = "none";
+      loadAllBtn.style.display = "none";
       pageHint.textContent = "";
     } finally {
       loading = false;
     }
   }
 
-  // Polls the first page to keep “freshness” (doesn’t wipe what you’ve loaded)
   async function pollFirstPage() {
     if (loading) return;
     try {
       const summary = await fetchSummary(currentPlaceId);
       uPlayersEl.textContent = summary.playersUniverse ?? "–";
-      // Replace/refresh items that correspond to the first page:
       const first = Array.isArray(summary.servers) ? summary.servers : [];
+
+      // upsert first page into items
       const map = new Map(items.map(i => [i.id, i]));
-      first.forEach(i => map.set(i.id, i)); // upsert page-1 rows
+      first.forEach(i => map.set(i.id, i));
       items = Array.from(map.values());
-      nextCursor = summary.nextCursor || nextCursor; // keep existing cursor if summary has none
+
+      nextCursor = summary.nextCursor || nextCursor;
+      populateRegionFilter(items);
       renderSummary();
       renderServers(items);
     } catch (e) { /* ignore one-off poll errors */ }
   }
 
-  // Load more handler
+  // ===== Events =====
+  placeSelect.addEventListener("change", () => {
+    currentPlaceId = placeSelect.value;
+    items = [];
+    nextCursor = null;
+    renderSummary();
+    renderServers(items);
+    bootstrapFirstPage();
+  });
+
   loadBtn.addEventListener("click", async () => {
     if (!nextCursor || loading) return;
     try {
@@ -204,10 +266,10 @@
       const newItems = Array.isArray(page.items) ? page.items : [];
       nextCursor = page.nextPageCursor || null;
 
-      // append, avoiding duplicates
       const existing = new Set(items.map(i => i.id));
       newItems.forEach(i => { if (!existing.has(i.id)) items.push(i); });
 
+      populateRegionFilter(items);
       renderSummary();
       renderServers(items);
     } catch (e) {
@@ -219,8 +281,52 @@
     }
   });
 
-  // Start up
+  // Load ALL remaining pages (client-side pagination)
+  loadAllBtn.addEventListener("click", async () => {
+    if (loading) return;
+    try {
+      loading = true;
+      loadAllBtn.textContent = "Loading all…";
+      while (nextCursor) {
+        const page = await fetchServers(currentPlaceId, nextCursor);
+        const newItems = Array.isArray(page.items) ? page.items : [];
+        nextCursor = page.nextPageCursor || null;
+
+        const existing = new Set(items.map(i => i.id));
+        newItems.forEach(i => { if (!existing.has(i.id)) items.push(i); });
+      }
+      populateRegionFilter(items);
+      renderSummary();
+      renderServers(items);
+    } catch (e) {
+      console.error(e);
+      pageHint.textContent = "Error loading all.";
+    } finally {
+      loadAllBtn.textContent = "Load all";
+      loading = false;
+    }
+  });
+
+  // Filters wiring
+  function onFilterChange() {
+    filters.region = fltRegion.value;
+    filters.minFps = Number(fltFPS.value || 0);
+    filters.nonEmpty = fltNonEmpty.checked;
+    renderSummary();
+    renderServers(items);
+  }
+  fltRegion.addEventListener("change", onFilterChange);
+  fltFPS.addEventListener("input", onFilterChange);
+  fltNonEmpty.addEventListener("change", onFilterChange);
+  fltReset.addEventListener("click", () => {
+    fltRegion.value = "";
+    fltFPS.value = "";
+    fltNonEmpty.checked = false;
+    onFilterChange();
+  });
+
+  // Start
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live (with Load more) === -->
+<!-- === /NET Live (filters + load all + same-tab join) === -->
