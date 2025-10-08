@@ -1,10 +1,9 @@
-<!-- === New England Transit: Live Statistics (drop-in) === -->
+<!-- === New England Transit: Live Statistics (with Load more) === -->
 <style>
-  /* minimal styles so it looks OK even without your site CSS */
   .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
   .net-eyebrow{font-size:.9rem;opacity:.7;letter-spacing:.12em;text-transform:uppercase}
   .net-h1{font-size:clamp(24px,3.2vw,40px);margin:.25rem 0 1rem;font-weight:800}
-  .net-lead{color:#333;opacity:.9;margin:.25rem 0 1rem}
+  .net-lead{opacity:.85;margin:.25rem 0 1rem}
   .net-card{border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:12px;margin-top:10px}
   .net-hint{font-size:.9rem;opacity:.7}
   .net-controls{margin:12px 0}
@@ -14,6 +13,8 @@
   .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
   .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.15);cursor:pointer;background:#ff7f00;color:#0b0b0b;font-weight:700}
   .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:#fff}
+  .net-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 0}
   @media (max-width:760px){ .net-row,.net-head{grid-template-columns:1.6fr .8fr .6fr .8fr 1fr} }
 </style>
 
@@ -24,18 +25,16 @@
 
   <div class="net-card" id="net-summary">
     <strong>Universe Players:</strong> <span id="uPlayers">–</span> •
-    <strong>Servers Listed:</strong> <span id="srvCount">–</span> •
-    <strong>Players in Listed:</strong> <span id="srvPlayers">–</span>
-    <div class="net-hint">Auto-updates every 15s</div>
+    <strong>Servers Shown:</strong> <span id="srvShown">–</span> •
+    <strong>Players in Shown:</strong> <span id="srvPlayers">–</span>
+    <div class="net-hint">Auto-updates every 15s (appends new first page)</div>
   </div>
 
   <div class="net-controls">
     <label for="net-place">Place:&nbsp;</label>
     <select id="net-place">
       <option value="79519172222138">Lower Mystic (Public)</option>
-      <!-- Add more places when ready:
-      <option value="HUB_PLACE_ID">Main Hub (Public)</option>
-      -->
+      <!-- Add the hub place when you’re ready -->
     </select>
   </div>
 
@@ -44,30 +43,45 @@
       <div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div></div>
     </div>
     <div id="net-table" class="net-table">Loading servers…</div>
+    <div class="net-actions">
+      <span class="net-hint" id="net-pagehint"></span>
+      <button id="net-load" class="btn ghost" style="display:none">Load more</button>
+    </div>
   </div>
 </section>
 
 <script>
   // ====== Config ======
-  const WORKER_BASE = "https://live.contact-b46.workers.dev"; // your Cloudflare Worker
+  const WORKER_BASE = "https://live.contact-b46.workers.dev";
   const UNIVERSE_ID = "8731366500";
   const SERVER_TYPE = "Public";
 
   // ====== Elements ======
-  const placeSelect = document.getElementById("net-place");
-  const tableEl = document.getElementById("net-table");
-  const uPlayersEl = document.getElementById("uPlayers");
-  const srvCountEl = document.getElementById("srvCount");
-  const srvPlayersEl = document.getElementById("srvPlayers");
+  const placeSelect   = document.getElementById("net-place");
+  const tableEl       = document.getElementById("net-table");
+  const uPlayersEl    = document.getElementById("uPlayers");
+  const srvShownEl    = document.getElementById("srvShown");
+  const srvPlayersEl  = document.getElementById("srvPlayers");
+  const loadBtn       = document.getElementById("net-load");
+  const pageHint      = document.getElementById("net-pagehint");
 
-  // Track current place in view (for Join buttons)
+  // ====== State ======
   let currentPlaceId = placeSelect.value;
+  let items = [];               // accumulated servers
+  let nextCursor = null;        // for pagination
+  let loading = false;
+
   placeSelect.addEventListener("change", () => {
     currentPlaceId = placeSelect.value;
-    tick();
+    // reset state on place switch
+    items = [];
+    nextCursor = null;
+    renderSummary();
+    renderServers(items);
+    bootstrapFirstPage();       // fetch fresh page 1 + summary
   });
 
-  // ====== API calls ======
+  // ====== API ======
   async function fetchSummary(placeId) {
     const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
     const res = await fetch(url, { cache: "no-store" });
@@ -75,9 +89,18 @@
     return res.json();
   }
 
-  // ====== Join button handler ======
+  async function fetchServers(placeId, cursor = "") {
+    const url = new URL(`${WORKER_BASE}/api/servers`);
+    url.searchParams.set("placeId", placeId);
+    url.searchParams.set("serverType", SERVER_TYPE);
+    if (cursor) url.searchParams.set("cursor", cursor);
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    return res.json(); // { items: [...], nextPageCursor }
+  }
+
+  // ====== Join handler ======
   function joinServer(placeId, jobId) {
-    // Try Roblox app deep link, fallback to web launcher
     const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
     const web  = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
     const t = Date.now();
@@ -90,12 +113,20 @@
       document.body.removeChild(iframe);
     }, 900);
   }
+  window.joinServer = joinServer; // used by inline onclick
 
   // ====== Render ======
-  function renderServers(items = []) {
-    if (!items.length) { tableEl.textContent = "No public servers found."; return; }
+  function renderSummary() {
+    const shown = items.length;
+    const playersShown = items.reduce((n, s) => n + (s.playing ?? 0), 0);
+    srvShownEl.textContent = shown;
+    srvPlayersEl.textContent = playersShown;
+  }
 
-    const rows = items.map(s => {
+  function renderServers(list = []) {
+    if (!list.length) { tableEl.textContent = "No public servers found."; loadBtn.style.display = "none"; pageHint.textContent = ""; return; }
+
+    const rows = list.map(s => {
       const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
       const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
       const region = s.region ?? "–";
@@ -112,25 +143,84 @@
     }).join("");
 
     tableEl.innerHTML = rows;
-  }
-
-  // ====== Tick loop ======
-  async function tick() {
-    try {
-      const data = await fetchSummary(currentPlaceId);
-      uPlayersEl.textContent = data.playersUniverse ?? "–";
-      srvCountEl.textContent = data.serversListed ?? "–";
-      srvPlayersEl.textContent = data.playersInListedServers ?? "–";
-      renderServers(data.servers || []);
-    } catch (err) {
-      console.error(err);
-      tableEl.textContent = "Error loading stats.";
+    // Load-more UI
+    if (nextCursor) {
+      loadBtn.style.display = "inline-flex";
+      pageHint.textContent = "More servers available";
+    } else {
+      loadBtn.style.display = "none";
+      pageHint.textContent = "All servers loaded";
     }
   }
-  tick();
-  setInterval(tick, 15000);
 
-  // expose for inline onclick
-  window.joinServer = joinServer;
+  // ====== Bootstrapping & polling ======
+  async function bootstrapFirstPage() {
+    try {
+      loading = true;
+      tableEl.textContent = "Loading servers…";
+      const summary = await fetchSummary(currentPlaceId);
+      uPlayersEl.textContent = summary.playersUniverse ?? "–";
+
+      // take page 1 from summary
+      items = Array.isArray(summary.servers) ? summary.servers : [];
+      nextCursor = summary.nextCursor || null;
+
+      renderSummary();
+      renderServers(items);
+    } catch (e) {
+      console.error(e);
+      tableEl.textContent = "Error loading stats.";
+      loadBtn.style.display = "none";
+      pageHint.textContent = "";
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Polls the first page to keep “freshness” (doesn’t wipe what you’ve loaded)
+  async function pollFirstPage() {
+    if (loading) return;
+    try {
+      const summary = await fetchSummary(currentPlaceId);
+      uPlayersEl.textContent = summary.playersUniverse ?? "–";
+      // Replace/refresh items that correspond to the first page:
+      const first = Array.isArray(summary.servers) ? summary.servers : [];
+      const map = new Map(items.map(i => [i.id, i]));
+      first.forEach(i => map.set(i.id, i)); // upsert page-1 rows
+      items = Array.from(map.values());
+      nextCursor = summary.nextCursor || nextCursor; // keep existing cursor if summary has none
+      renderSummary();
+      renderServers(items);
+    } catch (e) { /* ignore one-off poll errors */ }
+  }
+
+  // Load more handler
+  loadBtn.addEventListener("click", async () => {
+    if (!nextCursor || loading) return;
+    try {
+      loading = true;
+      loadBtn.textContent = "Loading…";
+      const page = await fetchServers(currentPlaceId, nextCursor);
+      const newItems = Array.isArray(page.items) ? page.items : [];
+      nextCursor = page.nextPageCursor || null;
+
+      // append, avoiding duplicates
+      const existing = new Set(items.map(i => i.id));
+      newItems.forEach(i => { if (!existing.has(i.id)) items.push(i); });
+
+      renderSummary();
+      renderServers(items);
+    } catch (e) {
+      console.error(e);
+      pageHint.textContent = "Error loading more.";
+    } finally {
+      loadBtn.textContent = "Load more";
+      loading = false;
+    }
+  });
+
+  // Start up
+  bootstrapFirstPage();
+  setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live block === -->
+<!-- === /NET Live (with Load more) === -->
