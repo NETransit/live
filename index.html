@@ -1,4 +1,4 @@
-<!-- === New England Transit: Live Statistics (filters + load all + join w/ manual fallback) === -->
+<!-- === New England Transit: Live Statistics (2 places + filters + load all + join w/ manual fallback) === -->
 <style>
   .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
   .net-eyebrow{font-size:.9rem;opacity:.7;letter-spacing:.12em;text-transform:uppercase}
@@ -39,7 +39,7 @@
     <label for="net-place">Place:&nbsp;</label>
     <select id="net-place">
       <option value="79519172222138">Lower Mystic (Public)</option>
-      <!-- Add Hub place when you’re ready -->
+      <option value="8731366500">Hub / Starting Place (Public)</option>
     </select>
   </div>
 
@@ -48,7 +48,6 @@
     <label>Region:
       <select id="flt-region">
         <option value="">All</option>
-        <!-- dynamic unique regions will be added -->
       </select>
     </label>
     <label>Min FPS:
@@ -66,7 +65,7 @@
     </div>
     <div id="net-table" class="net-table">Loading servers…</div>
 
-    <!-- Inline fallback banner (shown only if deep link fails) -->
+    <!-- Fallback banner (shown only if deep link fails) -->
     <div id="net-fallback" style="display:none;margin-top:8px"></div>
 
     <div class="net-actions">
@@ -80,9 +79,9 @@
 <script>
   // ===== Config =====
   const WORKER_BASE = "https://live.contact-b46.workers.dev";
-  const UNIVERSE_ID = "8731366500";
+  const UNIVERSE_ID = "8731366500";      // New England Transit universe
   const SERVER_TYPE = "Public";
-  const JOIN_OPEN_NEW_TAB = false; // web fallback opens in same tab by default
+  const JOIN_OPEN_NEW_TAB = false;       // fallback web launcher opens in same tab by default
 
   // ===== Elements =====
   const placeSelect   = document.getElementById("net-place");
@@ -101,8 +100,8 @@
 
   // ===== State =====
   let currentPlaceId = placeSelect.value;
-  let items = [];               // accumulated raw servers
-  let nextCursor = null;        // pagination cursor for /api/servers
+  let items = [];         // accumulated raw servers
+  let nextCursor = null;  // pagination cursor
   let loading = false;
 
   // Filters state
@@ -126,58 +125,46 @@
     return res.json(); // { items, nextPageCursor }
   }
 
-  // ===== Join (same-tab deep link + manual fallback banner) =====
+  // ===== Join (deep link same tab + manual fallback) =====
   function showFallback(jobId, placeId) {
     const web = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
     fallbackBox.innerHTML = `
       <div style="border:1px solid rgba(0,0,0,.15);border-radius:10px;padding:10px">
         Having trouble launching Roblox?
         <button class="btn ghost" id="net-open-web">Open via web launcher</button>
-      </div>
-    `;
+      </div>`;
     fallbackBox.style.display = "block";
     document.getElementById("net-open-web").onclick = () => {
       if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener");
       else window.location.href = web;
     };
   }
-  function hideFallback() { fallbackBox.style.display = "none"; fallbackBox.innerHTML = ""; }
+  function hideFallback(){ fallbackBox.style.display="none"; fallbackBox.innerHTML=""; }
 
   function joinServer(placeId, jobId) {
     hideFallback();
-
     const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
     let opened = false;
 
     const onVisibility = () => {
-      if (document.hidden || document.visibilityState === "hidden") {
-        opened = true; cleanup();
-      }
+      if (document.hidden || document.visibilityState === "hidden") { opened = true; cleanup(); }
     };
     const onPageHide = () => { opened = true; cleanup(); };
-
     function cleanup() {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", onPageHide);
     }
-
     document.addEventListener("visibilitychange", onVisibility, { once: true });
     window.addEventListener("pagehide", onPageHide, { once: true });
 
-    // Try app deep link in same tab
     window.location.assign(deep);
-
-    // If we’re still here after ~1s, show fallback button (no auto redirect)
-    setTimeout(() => {
-      if (!opened && !document.hidden) showFallback(jobId, placeId);
-      cleanup();
-    }, 1000);
+    setTimeout(() => { if (!opened && !document.hidden) showFallback(jobId, placeId); cleanup(); }, 1000);
   }
   window.joinServer = joinServer;
 
   // ===== Filtering =====
-  function applyFilters(list) {
-    return list.filter(s => {
+  function applyFilters(list){
+    return list.filter(s=>{
       if (filters.region && (s.region ?? "") !== filters.region) return false;
       const fpsVal = (typeof s.fps === "number") ? s.fps : 0;
       if (filters.minFps && fpsVal < filters.minFps) return false;
@@ -185,35 +172,29 @@
       return true;
     });
   }
-
-  function populateRegionFilter(list) {
-    const uniq = Array.from(new Set(list.map(s => s.region).filter(Boolean))).sort();
-    const current = fltRegion.value;
-    fltRegion.innerHTML = `<option value="">All</option>` + uniq.map(r => `<option value="${r}">${r}</option>`).join("");
-    if (uniq.includes(current)) fltRegion.value = current;
+  function populateRegionFilter(list){
+    const uniq = Array.from(new Set(list.map(s=>s.region).filter(Boolean))).sort();
+    const cur = fltRegion.value;
+    fltRegion.innerHTML = `<option value="">All</option>` + uniq.map(r=>`<option value="${r}">${r}</option>`).join("");
+    if (uniq.includes(cur)) fltRegion.value = cur;
   }
 
   // ===== Render =====
-  function renderSummary() {
+  function renderSummary(){
     const filtered = applyFilters(items);
-    const shown = filtered.length;
-    const playersShown = filtered.reduce((n, s) => n + (s.playing ?? 0), 0);
-    srvShownEl.textContent = shown;
-    srvPlayersEl.textContent = playersShown;
+    srvShownEl.textContent   = filtered.length;
+    srvPlayersEl.textContent = filtered.reduce((n,s)=>n+(s.playing??0),0);
   }
-
-  function renderServers(listRaw = []) {
+  function renderServers(listRaw=[]){
     const list = applyFilters(listRaw);
-
-    if (!listRaw.length) {
+    if (!listRaw.length){
       tableEl.textContent = "No public servers found.";
       loadBtn.style.display = "none";
       loadAllBtn.style.display = "none";
       pageHint.textContent = "";
       return;
     }
-
-    const rows = list.map(s => {
+    const rows = list.map(s=>{
       const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
       const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
       const region = s.region ?? "–";
@@ -228,7 +209,6 @@
           <div><button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
         </div>`;
     }).join("");
-
     tableEl.innerHTML = rows;
 
     const hasMore = !!nextCursor;
@@ -238,127 +218,91 @@
   }
 
   // ===== Bootstrapping & polling =====
-  async function bootstrapFirstPage() {
-    try {
+  async function bootstrapFirstPage(){
+    try{
       loading = true;
       tableEl.textContent = "Loading servers…";
       const summary = await fetchSummary(currentPlaceId);
       uPlayersEl.textContent = summary.playersUniverse ?? "–";
-
       items = Array.isArray(summary.servers) ? summary.servers : [];
       nextCursor = summary.nextCursor || null;
-
       populateRegionFilter(items);
-      renderSummary();
-      renderServers(items);
-    } catch (e) {
+      renderSummary(); renderServers(items);
+    }catch(e){
       console.error(e);
       tableEl.textContent = "Error loading stats.";
-      loadBtn.style.display = "none";
-      loadAllBtn.style.display = "none";
+      loadBtn.style.display = loadAllBtn.style.display = "none";
       pageHint.textContent = "";
-    } finally {
-      loading = false;
-    }
+    }finally{ loading = false; }
   }
-
-  async function pollFirstPage() {
+  async function pollFirstPage(){
     if (loading) return;
-    try {
+    try{
       const summary = await fetchSummary(currentPlaceId);
       uPlayersEl.textContent = summary.playersUniverse ?? "–";
       const first = Array.isArray(summary.servers) ? summary.servers : [];
-
-      // upsert first page into items
-      const map = new Map(items.map(i => [i.id, i]));
-      first.forEach(i => map.set(i.id, i));
+      const map = new Map(items.map(i=>[i.id,i]));
+      first.forEach(i=>map.set(i.id,i));
       items = Array.from(map.values());
-
       nextCursor = summary.nextCursor || nextCursor;
       populateRegionFilter(items);
-      renderSummary();
-      renderServers(items);
-    } catch (e) { /* ignore one-off poll errors */ }
+      renderSummary(); renderServers(items);
+    }catch(e){ /* ignore one-off */ }
   }
 
   // ===== Events =====
-  placeSelect.addEventListener("change", () => {
+  placeSelect.addEventListener("change", ()=>{
     currentPlaceId = placeSelect.value;
-    items = [];
-    nextCursor = null;
-    renderSummary();
-    renderServers(items);
+    items = []; nextCursor = null;
+    renderSummary(); renderServers(items);
     bootstrapFirstPage();
   });
 
-  loadBtn.addEventListener("click", async () => {
+  loadBtn.addEventListener("click", async ()=>{
     if (!nextCursor || loading) return;
-    try {
-      loading = true;
-      loadBtn.textContent = "Loading…";
+    try{
+      loading = true; loadBtn.textContent = "Loading…";
       const page = await fetchServers(currentPlaceId, nextCursor);
-      const newItems = Array.isArray(page.items) ? page.items : [];
+      const newItems = Array.isArray(page.items)?page.items:[];
       nextCursor = page.nextPageCursor || null;
-
-      const existing = new Set(items.map(i => i.id));
-      newItems.forEach(i => { if (!existing.has(i.id)) items.push(i); });
-
+      const existing = new Set(items.map(i=>i.id));
+      newItems.forEach(i=>{ if(!existing.has(i.id)) items.push(i); });
       populateRegionFilter(items);
-      renderSummary();
-      renderServers(items);
-    } catch (e) {
-      console.error(e);
-      pageHint.textContent = "Error loading more.";
-    } finally {
-      loadBtn.textContent = "Load more";
-      loading = false;
-    }
+      renderSummary(); renderServers(items);
+    }catch(e){ console.error(e); pageHint.textContent = "Error loading more."; }
+    finally{ loadBtn.textContent = "Load more"; loading = false; }
   });
 
-  loadAllBtn.addEventListener("click", async () => {
+  loadAllBtn.addEventListener("click", async ()=>{
     if (loading) return;
-    try {
-      loading = true;
-      loadAllBtn.textContent = "Loading all…";
-      while (nextCursor) {
+    try{
+      loading = true; loadAllBtn.textContent = "Loading all…";
+      while(nextCursor){
         const page = await fetchServers(currentPlaceId, nextCursor);
-        const newItems = Array.isArray(page.items) ? page.items : [];
+        const newItems = Array.isArray(page.items)?page.items:[];
         nextCursor = page.nextPageCursor || null;
-
-        const existing = new Set(items.map(i => i.id));
-        newItems.forEach(i => { if (!existing.has(i.id)) items.push(i); });
+        const existing = new Set(items.map(i=>i.id));
+        newItems.forEach(i=>{ if(!existing.has(i.id)) items.push(i); });
       }
       populateRegionFilter(items);
-      renderSummary();
-      renderServers(items);
-    } catch (e) {
-      console.error(e);
-      pageHint.textContent = "Error loading all.";
-    } finally {
-      loadAllBtn.textContent = "Load all";
-      loading = false;
-    }
+      renderSummary(); renderServers(items);
+    }catch(e){ console.error(e); pageHint.textContent = "Error loading all."; }
+    finally{ loadAllBtn.textContent = "Load all"; loading = false; }
   });
 
-  function onFilterChange() {
+  function onFilterChange(){
     filters.region = fltRegion.value;
     filters.minFps = Number(fltFPS.value || 0);
     filters.nonEmpty = fltNonEmpty.checked;
-    renderSummary();
-    renderServers(items);
+    renderSummary(); renderServers(items);
   }
   fltRegion.addEventListener("change", onFilterChange);
   fltFPS.addEventListener("input", onFilterChange);
   fltNonEmpty.addEventListener("change", onFilterChange);
-  fltReset.addEventListener("click", () => {
-    fltRegion.value = "";
-    fltFPS.value = "";
-    fltNonEmpty.checked = false;
-    onFilterChange();
-  });
+  fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; onFilterChange(); });
 
   // Start
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live (filters + load all + join w/ manual fallback) === -->
+<!-- === /NET Live === -->
