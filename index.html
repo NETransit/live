@@ -1,46 +1,83 @@
-<!-- === New England Transit: Live Statistics (2 places + filters + load all + join w/ manual fallback) === -->
+<!-- === New England Transit: Live Statistics (v2) === -->
 <style>
-  .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-  .net-eyebrow{font-size:.9rem;opacity:.7;letter-spacing:.12em;text-transform:uppercase}
+  :root{
+    --bg:#ffffff; --fg:#0a0a0a; --muted:#50565c;
+    --card:#ffffff; --bd:rgba(0,0,0,.12); --accent:#ff7f00;
+  }
+  [data-theme="dark"]{
+    --bg:#0b1020; --fg:#e8eefc; --muted:#b8c2e0;
+    --card:#121832; --bd:rgba(255,255,255,.14); --accent:#ff7f00;
+  }
+
+  .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--fg)}
+  .net-eyebrow{font-size:.9rem;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
   .net-h1{font-size:clamp(24px,3.2vw,40px);margin:.25rem 0 1rem;font-weight:800}
-  .net-lead{opacity:.85;margin:.25rem 0 1rem}
-  .net-card{border:1px solid rgba(0,0,0,.12);border-radius:12px;padding:12px;margin-top:10px}
-  .net-hint{font-size:.9rem;opacity:.7}
-  .net-controls,.net-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
-  .net-table{border-top:1px solid rgba(0,0,0,.15);margin-top:8px}
-  .net-row,.net-head{display:grid;grid-template-columns:1.4fr .8fr .6fr .8fr .6fr;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(0,0,0,.08)}
-  .net-head{font-weight:700;border-bottom:2px solid rgba(0,0,0,.25)}
-  .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.15);cursor:pointer;background:#ff7f00;color:#0b0b0b;font-weight:700}
-  .btn.ghost{background:#fff}
+  .net-lead{opacity:.85;margin:.25rem 0 1rem;color:var(--muted)}
+  .net-card{border:1px solid var(--bd);border-radius:12px;padding:12px;margin-top:10px;background:var(--card)}
+  .net-hint{font-size:.9rem;color:var(--muted)}
+  .net-controls,.net-filters,.net-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
+  .net-bar{justify-content:space-between}
+  .net-table{border-top:1px solid var(--bd);margin-top:8px}
+  .net-row,.net-head{display:grid;grid-template-columns:1.1fr .7fr .6fr .7fr .7fr .5fr;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}
+  .net-head{font-weight:700;border-bottom:2px solid var(--bd)}
+  .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid var(--bd);cursor:pointer;background:var(--accent);color:#0b0b0b;font-weight:700}
+  .btn.ghost{background:transparent;color:var(--fg)}
   .btn:active{transform:translateY(1px)}
+  input[type=number],input[type=text],select{
+    padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--fg)
+  }
+  input::placeholder{color:var(--muted)}
+  .chip{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--bd);border-radius:999px;font-size:.9rem}
   .net-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 0}
-  .chip{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid rgba(0,0,0,.12);border-radius:999px;font-size:.9rem}
-  input[type=number]{width:90px;padding:6px;border-radius:8px;border:1px solid rgba(0,0,0,.2)}
-  select{padding:6px;border-radius:8px;border:1px solid rgba(0,0,0,.2)}
-  label{font-size:.95rem}
-  @media (max-width:760px){ .net-row,.net-head{grid-template-columns:1.6fr .8fr .6fr .8fr 1fr} }
+  .theme-toggle{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;background:transparent;color:var(--fg);cursor:pointer}
+
+  /* Auto-refresh pulse */
+  @keyframes netPulse{0%{box-shadow:0 0 0 0 rgba(255,127,0,.0)}50%{box-shadow:0 0 0 6px rgba(255,127,0,.15)}100%{box-shadow:0 0 0 0 rgba(255,127,0,0)}}
+  .updating{animation:netPulse .6s ease-out 1}
+
+  /* Mobile cards */
+  @media (max-width:760px){
+    .net-row,.net-head{grid-template-columns:1fr}
+    .net-head{display:none}
+    .net-row{border:1px solid var(--bd);border-radius:10px;padding:12px;background:var(--card)}
+    .net-row > div{display:flex;justify-content:space-between;padding:4px 0}
+    .net-row .net-join{justify-content:flex-end}
+  }
+
+  /* Page background */
+  .net-bg{background:var(--bg)}
 </style>
 
-<section class="net-wrap" id="net-live">
-  <div class="net-eyebrow">Live Transit Dashboard</div>
-  <h1 class="net-h1">New England Transit: Live Statistics</h1>
-  <p class="net-lead">Real-time Roblox activity across our places. Public servers only.</p>
+<section class="net-wrap net-bg" id="net-live" data-theme="">
+  <div class="net-bar">
+    <div>
+      <div class="net-eyebrow">Live Transit Dashboard</div>
+      <h1 class="net-h1">New England Transit: Live Statistics</h1>
+      <p class="net-lead">Real-time Roblox activity for Public servers.</p>
+    </div>
+    <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">🌙/☀️</button>
+  </div>
 
   <div class="net-card" id="net-summary">
     <strong>Universe Players:</strong> <span id="uPlayers">–</span> •
     <strong>Servers Shown:</strong> <span id="srvShown">–</span> •
-    <strong>Players in Shown:</strong> <span id="srvPlayers">–</span>
-    <div class="net-hint">Auto-updates every 15s (refreshes page-1 rows)</div>
+    <strong>Players in Shown:</strong> <span id="srvPlayers">–</span> •
+    <strong>Peak:</strong> <span id="peakVal">–</span> <span class="net-hint" id="peakWhen"></span>
+    <div class="net-hint">Auto-updates every 15s • Peak is saved locally in your browser</div>
   </div>
 
-  <!-- Place selector -->
+  <!-- Place selector + Search -->
   <div class="net-controls">
     <label for="net-place">Place:&nbsp;</label>
     <select id="net-place">
       <option value="79519172222138">Lower Mystic (Public)</option>
       <option value="8731366500">Hub / Starting Place (Public)</option>
     </select>
+
+    <label>Search:
+      <input id="flt-search" type="text" placeholder="Search server id or region…">
+    </label>
   </div>
 
   <!-- Filters -->
@@ -59,9 +96,9 @@
     <button id="flt-reset" class="btn ghost">Reset filters</button>
   </div>
 
-  <div class="net-card">
+  <div class="net-card" id="net-card-table">
     <div class="net-head">
-      <div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div></div>
+      <div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div>Uptime</div><div></div>
     </div>
     <div id="net-table" class="net-table">Loading servers…</div>
 
@@ -79,24 +116,41 @@
 <script>
   // ===== Config =====
   const WORKER_BASE = "https://live.contact-b46.workers.dev";
-  const UNIVERSE_ID = "8731366500";      // New England Transit universe
+  const UNIVERSE_ID = "8731366500";      // Universe
   const SERVER_TYPE = "Public";
-  const JOIN_OPEN_NEW_TAB = false;       // fallback web launcher opens in same tab by default
+  const JOIN_OPEN_NEW_TAB = false;       // web fallback opens in same tab by default
 
   // ===== Elements =====
-  const placeSelect   = document.getElementById("net-place");
-  const tableEl       = document.getElementById("net-table");
-  const uPlayersEl    = document.getElementById("uPlayers");
-  const srvShownEl    = document.getElementById("srvShown");
-  const srvPlayersEl  = document.getElementById("srvPlayers");
-  const loadBtn       = document.getElementById("net-load");
-  const loadAllBtn    = document.getElementById("net-loadall");
-  const pageHint      = document.getElementById("net-pagehint");
-  const fltRegion     = document.getElementById("flt-region");
-  const fltFPS        = document.getElementById("flt-fps");
-  const fltNonEmpty   = document.getElementById("flt-nonempty");
-  const fltReset      = document.getElementById("flt-reset");
-  const fallbackBox   = document.getElementById("net-fallback");
+  const rootEl       = document.getElementById("net-live");
+  const themeBtn     = document.getElementById("themeToggle");
+  const placeSelect  = document.getElementById("net-place");
+  const tableEl      = document.getElementById("net-table");
+  const cardTableEl  = document.getElementById("net-card-table");
+  const uPlayersEl   = document.getElementById("uPlayers");
+  const srvShownEl   = document.getElementById("srvShown");
+  const srvPlayersEl = document.getElementById("srvPlayers");
+  const peakValEl    = document.getElementById("peakVal");
+  const peakWhenEl   = document.getElementById("peakWhen");
+  const loadBtn      = document.getElementById("net-load");
+  const loadAllBtn   = document.getElementById("net-loadall");
+  const pageHint     = document.getElementById("net-pagehint");
+  const fltRegion    = document.getElementById("flt-region");
+  const fltFPS       = document.getElementById("flt-fps");
+  const fltNonEmpty  = document.getElementById("flt-nonempty");
+  const fltReset     = document.getElementById("flt-reset");
+  const fltSearch    = document.getElementById("flt-search");
+  const fallbackBox  = document.getElementById("net-fallback");
+  const summaryEl    = document.getElementById("net-summary");
+
+  // ===== Theme (auto + toggle) =====
+  const savedTheme = localStorage.getItem("net-theme");
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  setTheme(savedTheme || (prefersDark ? "dark" : "light"));
+  themeBtn.addEventListener("click", ()=> setTheme(rootEl.dataset.theme === "dark" ? "light" : "dark"));
+  function setTheme(mode){
+    rootEl.dataset.theme = mode;
+    localStorage.setItem("net-theme", mode);
+  }
 
   // ===== State =====
   let currentPlaceId = placeSelect.value;
@@ -105,7 +159,15 @@
   let loading = false;
 
   // Filters state
-  const filters = { region: "", minFps: 0, nonEmpty: false };
+  const filters = { region: "", minFps: 0, nonEmpty: false, search: "" };
+
+  // Peak tracker (local)
+  const PEAK_KEY = "net_peak_universe";
+  const peakStore = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}"); // {val, whenISO}
+  if (peakStore.val) {
+    peakValEl.textContent = peakStore.val;
+    peakWhenEl.textContent = `(${new Date(peakStore.whenISO).toLocaleString()})`;
+  }
 
   // ===== API =====
   async function fetchSummary(placeId) {
@@ -114,7 +176,6 @@
     if (!res.ok) throw new Error(`API ${res.status}`);
     return res.json();
   }
-
   async function fetchServers(placeId, cursor = "") {
     const url = new URL(`${WORKER_BASE}/api/servers`);
     url.searchParams.set("placeId", placeId);
@@ -129,46 +190,43 @@
   function showFallback(jobId, placeId) {
     const web = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
     fallbackBox.innerHTML = `
-      <div style="border:1px solid rgba(0,0,0,.15);border-radius:10px;padding:10px">
+      <div style="border:1px solid var(--bd);border-radius:10px;padding:10px">
         Having trouble launching Roblox?
         <button class="btn ghost" id="net-open-web">Open via web launcher</button>
       </div>`;
     fallbackBox.style.display = "block";
     document.getElementById("net-open-web").onclick = () => {
-      if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener");
-      else window.location.href = web;
+      if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener"); else window.location.href = web;
     };
   }
   function hideFallback(){ fallbackBox.style.display="none"; fallbackBox.innerHTML=""; }
-
   function joinServer(placeId, jobId) {
     hideFallback();
     const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
     let opened = false;
-
-    const onVisibility = () => {
-      if (document.hidden || document.visibilityState === "hidden") { opened = true; cleanup(); }
-    };
+    const onVisibility = () => { if (document.hidden) { opened = true; cleanup(); } };
     const onPageHide = () => { opened = true; cleanup(); };
-    function cleanup() {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", onPageHide);
-    }
-    document.addEventListener("visibilitychange", onVisibility, { once: true });
-    window.addEventListener("pagehide", onPageHide, { once: true });
-
+    function cleanup(){ document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("pagehide", onPageHide); }
+    document.addEventListener("visibilitychange", onVisibility, { once:true });
+    window.addEventListener("pagehide", onPageHide, { once:true });
     window.location.assign(deep);
-    setTimeout(() => { if (!opened && !document.hidden) showFallback(jobId, placeId); cleanup(); }, 1000);
+    setTimeout(()=>{ if (!opened && !document.hidden) showFallback(jobId, placeId); cleanup(); }, 1000);
   }
   window.joinServer = joinServer;
 
-  // ===== Filtering =====
+  // ===== Utils =====
   function applyFilters(list){
+    const q = filters.search.trim().toLowerCase();
     return list.filter(s=>{
       if (filters.region && (s.region ?? "") !== filters.region) return false;
       const fpsVal = (typeof s.fps === "number") ? s.fps : 0;
       if (filters.minFps && fpsVal < filters.minFps) return false;
       if (filters.nonEmpty && (!s.playing || s.playing <= 0)) return false;
+      if (q){
+        const id = (s.id||"").toLowerCase();
+        const region = (s.region||"").toLowerCase();
+        if (!id.includes(q) && !region.includes(q)) return false;
+      }
       return true;
     });
   }
@@ -178,15 +236,43 @@
     fltRegion.innerHTML = `<option value="">All</option>` + uniq.map(r=>`<option value="${r}">${r}</option>`).join("");
     if (uniq.includes(cur)) fltRegion.value = cur;
   }
+  function fmtUptime(createdISO){
+    if (!createdISO) return "–";
+    const ms = Date.now() - new Date(createdISO).getTime();
+    if (ms < 0) return "–";
+    const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60);
+    if (h >= 24) return `${Math.floor(h/24)}d ${h%24}h`;
+    if (h > 0) return `${h}h ${m%60}m`;
+    return `${m}m ${s%60}s`;
+  }
 
   // ===== Render =====
-  function renderSummary(){
+  function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
+
+  function renderSummary(playersUniverse){
     const filtered = applyFilters(items);
     srvShownEl.textContent   = filtered.length;
     srvPlayersEl.textContent = filtered.reduce((n,s)=>n+(s.playing??0),0);
+
+    if (typeof playersUniverse === "number") {
+      uPlayersEl.textContent = playersUniverse;
+      // Peak tracker
+      const prev = Number(peakStore.val || 0);
+      if (playersUniverse > prev){
+        const when = new Date().toISOString();
+        localStorage.setItem(PEAK_KEY, JSON.stringify({ val: playersUniverse, whenISO: when }));
+        peakValEl.textContent = playersUniverse;
+        peakWhenEl.textContent = `(${new Date(when).toLocaleString()})`;
+      } else {
+        peakValEl.textContent = peakStore.val ?? "–";
+        peakWhenEl.textContent = peakStore.whenISO ? `(${new Date(peakStore.whenISO).toLocaleString()})` : "";
+      }
+    }
   }
+
   function renderServers(listRaw=[]){
     const list = applyFilters(listRaw);
+
     if (!listRaw.length){
       tableEl.textContent = "No public servers found.";
       loadBtn.style.display = "none";
@@ -194,10 +280,13 @@
       pageHint.textContent = "";
       return;
     }
+
+    // Desktop table
     const rows = list.map(s=>{
       const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
       const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
       const region = s.region ?? "–";
+      const uptime = fmtUptime(s.created);
       const created = s.created ? new Date(s.created).toLocaleTimeString() : "";
       const id = s.id || "";
       return `
@@ -206,7 +295,8 @@
           <div>${players}</div>
           <div>${fps}</div>
           <div>${region}</div>
-          <div><button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
+          <div>${uptime}</div>
+          <div class="net-join"><button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
         </div>`;
     }).join("");
     tableEl.innerHTML = rows;
@@ -223,11 +313,15 @@
       loading = true;
       tableEl.textContent = "Loading servers…";
       const summary = await fetchSummary(currentPlaceId);
-      uPlayersEl.textContent = summary.playersUniverse ?? "–";
+      pulse(summaryEl);
+      const playersUniverse = summary.playersUniverse ?? null;
+
       items = Array.isArray(summary.servers) ? summary.servers : [];
       nextCursor = summary.nextCursor || null;
+
       populateRegionFilter(items);
-      renderSummary(); renderServers(items);
+      renderSummary(playersUniverse);
+      renderServers(items);
     }catch(e){
       console.error(e);
       tableEl.textContent = "Error loading stats.";
@@ -235,18 +329,23 @@
       pageHint.textContent = "";
     }finally{ loading = false; }
   }
+
   async function pollFirstPage(){
     if (loading) return;
     try{
       const summary = await fetchSummary(currentPlaceId);
-      uPlayersEl.textContent = summary.playersUniverse ?? "–";
+      pulse(summaryEl);
+      const playersUniverse = summary.playersUniverse ?? null;
+
       const first = Array.isArray(summary.servers) ? summary.servers : [];
       const map = new Map(items.map(i=>[i.id,i]));
       first.forEach(i=>map.set(i.id,i));
       items = Array.from(map.values());
       nextCursor = summary.nextCursor || nextCursor;
+
       populateRegionFilter(items);
-      renderSummary(); renderServers(items);
+      renderSummary(playersUniverse);
+      renderServers(items);
     }catch(e){ /* ignore one-off */ }
   }
 
@@ -294,15 +393,17 @@
     filters.region = fltRegion.value;
     filters.minFps = Number(fltFPS.value || 0);
     filters.nonEmpty = fltNonEmpty.checked;
+    filters.search = fltSearch.value || "";
     renderSummary(); renderServers(items);
   }
   fltRegion.addEventListener("change", onFilterChange);
   fltFPS.addEventListener("input", onFilterChange);
   fltNonEmpty.addEventListener("change", onFilterChange);
-  fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; onFilterChange(); });
+  fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; fltSearch.value=""; onFilterChange(); });
+  fltSearch.addEventListener("input", onFilterChange);
 
   // Start
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live === -->
+<!-- === /NET Live v2 === -->
