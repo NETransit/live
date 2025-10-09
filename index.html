@@ -1,54 +1,80 @@
-<!-- === New England Transit: Live Statistics (v2 + KV uptime fallback) === -->
-<style>
-  :root{
-    --bg:#ffffff; --fg:#0a0a0a; --muted:#50565c;
-    --card:#ffffff; --bd:rgba(0,0,0,.12); --accent:#ff7f00;
-  }
-  [data-theme="dark"]{
-    --bg:#0b1020; --fg:#e8eefc; --muted:#b8c2e0;
-    --card:#121832; --bd:rgba(255,255,255,.14); --accent:#ff7f00;
-  }
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>New England Transit — Live Statistics</title>
+  <meta name="description" content="Live Roblox server statistics for New England Transit: players, FPS, regions, and maps." />
+  <meta name="robots" content="index,follow" />
+  <style>
+    :root{
+      --bg:#ffffff; --fg:#0a0a0a; --muted:#50565c;
+      --card:#ffffff; --bd:rgba(0,0,0,.12); --accent:#ff7f00;
+    }
+    [data-theme="dark"]{
+      --bg:#0b1020; --fg:#e8eefc; --muted:#b8c2e0;
+      --card:#121832; --bd:rgba(255,255,255,.14); --accent:#ff7f00;
+    }
 
-  .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--fg)}
-  .net-eyebrow{font-size:.9rem;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
-  .net-h1{font-size:clamp(24px,3.2vw,40px);margin:.25rem 0 1rem;font-weight:800}
-  .net-lead{opacity:.85;margin:.25rem 0 1rem;color:var(--muted)}
-  .net-card{border:1px solid var(--bd);border-radius:12px;padding:12px;margin-top:10px;background:var(--card)}
-  .net-hint{font-size:.9rem;color:var(--muted)}
-  .net-controls,.net-filters,.net-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
-  .net-bar{justify-content:space-between}
-  .net-table{border-top:1px solid var(--bd);margin-top:8px}
-  .net-row,.net-head{display:grid;grid-template-columns:1.1fr .7fr .6fr .7fr .7fr .5fr;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}
-  .net-head{font-weight:700;border-bottom:2px solid var(--bd)}
-  .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid var(--bd);cursor:pointer;background:var(--accent);color:#0b0b0b;font-weight:700}
-  .btn.ghost{background:transparent;color:var(--fg)}
-  .btn:active{transform:translateY(1px)}
-  input[type=number],input[type=text],select{
-    padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--fg)
-  }
-  input::placeholder{color:var(--muted)}
-  .chip{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--bd);border-radius:999px;font-size:.9rem}
-  .net-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 0}
-  .theme-toggle{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;background:transparent;color:var(--fg);cursor:pointer}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+    a{color:inherit}
 
-  /* Auto-refresh pulse */
-  @keyframes netPulse{0%{box-shadow:0 0 0 0 rgba(255,127,0,.0)}50%{box-shadow:0 0 0 6px rgba(255,127,0,.15)}100%{box-shadow:0 0 0 0 rgba(255,127,0,0)}}
-  .updating{animation:netPulse .6s ease-out 1}
+    .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+    .net-eyebrow{font-size:.9rem;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+    .net-h1{font-size:clamp(24px,3.2vw,40px);margin:.25rem 0 1rem;font-weight:800}
+    .net-lead{opacity:.85;margin:.25rem 0 1rem;color:var(--muted)}
+    .net-card{border:1px solid var(--bd);border-radius:12px;padding:12px;margin-top:10px;background:var(--card)}
+    .net-hint{font-size:.9rem;color:var(--muted)}
+    .net-controls,.net-filters,.net-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0}
+    .net-bar{justify-content:space-between}
+    .net-table{border-top:1px solid var(--bd);margin-top:8px}
+    .net-row,.net-head{display:grid;grid-template-columns:1.1fr .7fr .6fr .7fr .7fr .5fr;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}
+    .net-head{font-weight:700;border-bottom:2px solid var(--bd)}
+    .net-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid var(--bd);cursor:pointer;background:var(--accent);color:#0b0b0b;font-weight:700}
+    .btn.ghost{background:transparent;color:var(--fg)}
+    .btn:active{transform:translateY(1px)}
+    input[type=number],input[type=text],select{padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--fg)}
+    input::placeholder{color:var(--muted)}
+    .chip{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--bd);border-radius:999px;font-size:.9rem}
+    .net-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 0}
+    .theme-toggle{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;background:transparent;color:var(--fg);cursor:pointer}
 
-  /* Mobile cards */
-  @media (max-width:760px){
-    .net-row,.net-head{grid-template-columns:1fr}
-    .net-head{display:none}
-    .net-row{border:1px solid var(--bd);border-radius:10px;padding:12px;background:var(--card)}
-    .net-row > div{display:flex;justify-content:space-between;padding:4px 0}
-    .net-row .net-join{justify-content:flex-end}
-  }
+    /* Auto-refresh pulse */
+    @keyframes netPulse{0%{box-shadow:0 0 0 0 rgba(255,127,0,.0)}50%{box-shadow:0 0 0 6px rgba(255,127,0,.15)}100%{box-shadow:0 0 0 0 rgba(255,127,0,0)}}
+    .updating{animation:netPulse .6s ease-out 1}
 
-  .net-bg{background:var(--bg)}
-</style>
+    /* Modal */
+    .net-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9999}
+    .net-modal{width:min(100%,1000px);max-height:90vh;overflow:auto;border:1px solid var(--bd);border-radius:14px;background:var(--card);padding:14px}
+    .net-modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--bd);padding-bottom:8px;margin-bottom:10px}
+    .net-badge{padding:2px 8px;border-radius:999px;border:1px solid var(--bd);font-size:.85rem}
+    .net-role-operator{background:#ffe08a;color:#6a4b00}
+    .net-role-police{background:#b6d4ff;color:#0a3b7a}
+    .net-role-passenger{background:#d1d5db;color:#111827}
+    .net-modal-body{display:grid;grid-template-columns:1fr 1.2fr;gap:14px}
+    .net-list{border:1px solid var(--bd);border-radius:10px;padding:8px;overflow:auto;max-height:60vh}
+    .net-list-item{display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--bd);padding:8px 4px}
+    .net-list-item:last-child{border-bottom:none}
+    .net-map-wrap{position:relative;border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+    .net-map{display:block;width:100%;height:auto}
+    .net-canvas{position:absolute;inset:0;pointer-events:none}
 
-<section class="net-wrap net-bg" id="net-live" data-theme="">
+    /* Mobile cards */
+    @media (max-width:760px){
+      .net-row,.net-head{grid-template-columns:1fr}
+      .net-head{display:none}
+      .net-row{border:1px solid var(--bd);border-radius:10px;padding:12px;background:var(--card)}
+      .net-row > div{display:flex;justify-content:space-between;padding:4px 0}
+      .net-row .net-join{justify-content:flex-end}
+      .net-modal-body{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+
+<!-- === New England Transit: Live Statistics (v2) === -->
+<section class="net-wrap" id="net-live" data-theme="">
   <div class="net-bar">
     <div>
       <div class="net-eyebrow">Live Transit Dashboard</div>
@@ -114,10 +140,19 @@
 
 <script>
   // ===== Config =====
-  const WORKER_BASE = "https://live.contact-b46.workers.dev";
+  const WORKER_BASE = "https://live.contact-b46.workers.dev";   // public stats worker
+  const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev"; // new ingest worker
   const UNIVERSE_ID = "8731366500";      // Universe
   const SERVER_TYPE = "Public";
   const JOIN_OPEN_NEW_TAB = false;       // web fallback opens in same tab by default
+  const LOWER_MYSTIC_PLACE_ID = "79519172222138";
+
+  // --- Map projection config (update bounds for your map) ---
+  const MAP_CFG = {
+    // World bounds (X/Z plane). Set these to your real playable extents in Studio.
+    worldMinX: -1200, worldMaxX: 1200,
+    worldMinZ: -800,  worldMaxZ: 800,
+  };
 
   // ===== Elements =====
   const rootEl       = document.getElementById("net-live");
@@ -146,7 +181,10 @@
   const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   setTheme(savedTheme || (prefersDark ? "dark" : "light"));
   themeBtn.addEventListener("click", ()=> setTheme(rootEl.dataset.theme === "dark" ? "light" : "dark"));
-  function setTheme(mode){ rootEl.dataset.theme = mode; localStorage.setItem("net-theme", mode); }
+  function setTheme(mode){
+    rootEl.dataset.theme = mode;
+    localStorage.setItem("net-theme", mode);
+  }
 
   // ===== State =====
   let currentPlaceId = placeSelect.value;
@@ -210,54 +248,41 @@
   }
   window.joinServer = joinServer;
 
-  // ===== Robust getters + uptime =====
-  function getRegion(s) {
-    return s.region ?? s.serverRegion ?? s.serverLocation ??
-           (s.datacenter && (s.datacenter.region || s.datacenter.name)) ??
-           s.location ?? s.geoLocation ?? null;
-  }
-  function getCreatedISO(s) {
-    // Prefer Roblox timestamps; fall back to KV-provided firstSeenAt
-    return s.created ?? s.createdAt ?? s.startTime ?? s.startedAt ?? s.firstSeenAt ?? null;
-  }
-  function fmtUptime(createdISO){
-    if (!createdISO) return "–";
-    const t = new Date(createdISO);
-    if (isNaN(t.getTime())) return "–";
-    const ms = Date.now() - t.getTime();
-    if (ms < 0) return "–";
-    const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60), d = Math.floor(h/24);
-    if (d > 0) return `${d}d ${h%24}h`;
-    if (h > 0) return `${h}h ${m%60}m`;
-    return `${m}m ${s%60}s`;
-  }
-
-  // ===== Filtering =====
+  // ===== Utils =====
   function applyFilters(list){
     const q = filters.search.trim().toLowerCase();
     return list.filter(s=>{
-      if (filters.region && (getRegion(s) ?? "") !== filters.region) return false;
+      if (filters.region && (s.region ?? "") !== filters.region) return false;
       const fpsVal = (typeof s.fps === "number") ? s.fps : 0;
       if (filters.minFps && fpsVal < filters.minFps) return false;
       if (filters.nonEmpty && (!s.playing || s.playing <= 0)) return false;
       if (q){
         const id = (s.id||"").toLowerCase();
-        const region = (getRegion(s)||"").toLowerCase();
+        const region = (s.region||"").toLowerCase();
         if (!id.includes(q) && !region.includes(q)) return false;
       }
       return true;
     });
   }
   function populateRegionFilter(list){
-    const uniq = Array.from(new Set(list.map(getRegion).filter(Boolean))).sort();
+    const uniq = Array.from(new Set(list.map(s=>s.region).filter(Boolean))).sort();
     const cur = fltRegion.value;
     fltRegion.innerHTML = `<option value="">All</option>` + uniq.map(r=>`<option value="${r}">${r}</option>`).join("");
     if (uniq.includes(cur)) fltRegion.value = cur;
   }
+  function fmtUptime(createdISO){
+    if (!createdISO) return "–";
+    const ms = Date.now() - new Date(createdISO).getTime();
+    if (ms < 0) return "–";
+    const s = Math.floor(ms/1000), m = Math.floor(s/60), h = Math.floor(m/60);
+    if (h >= 24) return `${Math.floor(h/24)}d ${h%24}h`;
+    if (h > 0) return `${h}h ${m%60}m`;
+    return `${m}m ${s%60}s`;
+  }
+  function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
 
   // ===== Render =====
-  function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
-  function renderSummary(playersUniverse){
+  function renderSummary(playersUniverse=null){
     const filtered = applyFilters(items);
     srvShownEl.textContent   = filtered.length;
     srvPlayersEl.textContent = filtered.reduce((n,s)=>n+(s.playing??0),0);
@@ -265,22 +290,22 @@
     if (typeof playersUniverse === "number") {
       uPlayersEl.textContent = playersUniverse;
       // Peak tracker
-      const PEAK_KEY = "net_peak_universe";
-      const stored = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}");
-      const prev = Number(stored.val || 0);
+      const prev = Number(peakStore.val || 0);
       if (playersUniverse > prev){
         const when = new Date().toISOString();
         localStorage.setItem(PEAK_KEY, JSON.stringify({ val: playersUniverse, whenISO: when }));
         peakValEl.textContent = playersUniverse;
         peakWhenEl.textContent = `(${new Date(when).toLocaleString()})`;
       } else {
-        peakValEl.textContent = stored.val ?? "–";
-        peakWhenEl.textContent = stored.whenISO ? `(${new Date(stored.whenISO).toLocaleString()})` : "";
+        peakValEl.textContent = peakStore.val ?? "–";
+        peakWhenEl.textContent = peakStore.whenISO ? `(${new Date(peakStore.whenISO).toLocaleString()})` : "";
       }
     }
   }
+
   function renderServers(listRaw=[]){
     const list = applyFilters(listRaw);
+
     if (!listRaw.length){
       tableEl.textContent = "No public servers found.";
       loadBtn.style.display = "none";
@@ -288,24 +313,27 @@
       pageHint.textContent = "";
       return;
     }
+
     const rows = list.map(s=>{
       const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
       const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
-      const region = getRegion(s) ?? "–";
-      const createdISO = getCreatedISO(s);
-      const uptime = fmtUptime(createdISO);
-      const createdTime = createdISO ? new Date(createdISO).toLocaleTimeString() : "";
+      const region = s.region ?? "–";
+      const uptime = fmtUptime(s.created);
+      const created = s.created ? new Date(s.created).toLocaleTimeString() : "";
       const id = s.id || "";
+      const isLM = (currentPlaceId === LOWER_MYSTIC_PLACE_ID);
+      const viewBtn = isLM ? `<button class="btn ghost" onclick="openServerModal('${id}')">View</button>` : "";
       return `
-        <div class="net-row" title="${region !== '–' ? `Region: ${region}` : 'Region unavailable'}">
-          <div><span class="net-id">${id.slice(0,8)}…</span><br><small>${createdTime}</small></div>
+        <div class="net-row">
+          <div><span class="net-id">${id.slice(0,8)}…</span><br><small>${created}</small></div>
           <div>${players}</div>
           <div>${fps}</div>
           <div>${region}</div>
           <div>${uptime}</div>
-          <div class="net-join"><button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
+          <div class="net-join">${viewBtn} <button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
         </div>`;
     }).join("");
+
     tableEl.innerHTML = rows;
 
     const hasMore = !!nextCursor;
@@ -336,6 +364,7 @@
       pageHint.textContent = "";
     }finally{ loading = false; }
   }
+
   async function pollFirstPage(){
     if (loading) return;
     try{
@@ -362,6 +391,7 @@
     renderSummary(); renderServers(items);
     bootstrapFirstPage();
   });
+
   loadBtn.addEventListener("click", async ()=>{
     if (!nextCursor || loading) return;
     try{
@@ -376,6 +406,7 @@
     }catch(e){ console.error(e); pageHint.textContent = "Error loading more."; }
     finally{ loadBtn.textContent = "Load more"; loading = false; }
   });
+
   loadAllBtn.addEventListener("click", async ()=>{
     if (loading) return;
     try{
@@ -406,8 +437,149 @@
   fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; fltSearch.value=""; onFilterChange(); });
   fltSearch.addEventListener("input", onFilterChange);
 
+  // ===== Modal: Players + Map (Lower Mystic only) =====
+  const modalRoot = document.createElement("div");
+  modalRoot.className = "net-modal-backdrop";
+  modalRoot.id = "net-modal-root";
+  modalRoot.setAttribute("role","dialog");
+  modalRoot.setAttribute("aria-modal","true");
+  modalRoot.setAttribute("aria-hidden","true");
+  modalRoot.innerHTML = `
+    <div class="net-modal" id="net-modal">
+      <div class="net-modal-head">
+        <div>
+          <strong>Server:</strong> <span id="m-job"></span> •
+          <strong>Place:</strong> <span id="m-place">Lower Mystic</span> •
+          <strong>Updated:</strong> <span id="m-updated">–</span>
+        </div>
+        <button id="m-close" class="btn ghost">Close</button>
+      </div>
+      <div class="net-modal-body">
+        <div class="net-list" id="m-list">Loading players…</div>
+        <div class="net-map-wrap">
+          <!-- Replace with your 2D map image path -->
+          <img id="m-map" class="net-map" src="images/lower-mystic-map.png" alt="Lower Mystic Map">
+          <canvas id="m-canvas" class="net-canvas"></canvas>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modalRoot);
+
+  const modalList = document.getElementById("m-list");
+  const modalMapImg = document.getElementById("m-map");
+  const modalCanvas = document.getElementById("m-canvas");
+  const modalJob = document.getElementById("m-job");
+  const modalUpdated = document.getElementById("m-updated");
+  const modalCloseBtn = document.getElementById("m-close");
+
+  let modalTimer = null;
+  let modalJobId = null;
+
+  function openServerModal(jobId) {
+    if (!jobId) return;
+    modalJobId = jobId;
+    modalJob.textContent = jobId.slice(0,8) + "…";
+    modalUpdated.textContent = "–";
+    modalList.textContent = "Loading players…";
+
+    modalRoot.style.display = "flex";
+    modalRoot.setAttribute("aria-hidden", "false");
+
+    fetchAndRenderPlayers().catch(()=>{});
+    clearInterval(modalTimer);
+    modalTimer = setInterval(fetchAndRenderPlayers, 60000); // 60s poll while open
+  }
+  function closeServerModal() {
+    modalRoot.style.display = "none";
+    modalRoot.setAttribute("aria-hidden", "true");
+    clearInterval(modalTimer);
+    modalTimer = null;
+    modalJobId = null;
+  }
+  window.openServerModal = openServerModal;
+  modalCloseBtn.addEventListener("click", closeServerModal);
+  modalRoot.addEventListener("click", (e)=>{ if (e.target === modalRoot) closeServerModal(); });
+
+  async function fetchPlayersForServer(placeId, jobId) {
+    const url = `${GAME_WORKER_BASE}/api/players?placeId=${placeId}&jobId=${jobId}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("players API");
+    return res.json();
+  }
+
+  function worldToMap(x, z, imgW, imgH) {
+    const { worldMinX, worldMaxX, worldMinZ, worldMaxZ } = MAP_CFG;
+    const u = (x - worldMinX) / (worldMaxX - worldMinX);
+    const v = (z - worldMinZ) / (worldMaxZ - worldMinZ);
+    const px = Math.max(0, Math.min(imgW, u * imgW));
+    const py = Math.max(0, Math.min(imgH, (1 - v) * imgH)); // invert vertical
+    return [px, py];
+  }
+  function roleColor(role) {
+    switch (String(role || "").toLowerCase()) {
+      case "operator": return "#ffd54a";       // yellow
+      case "transit_police":
+      case "transit police": return "#60a5fa"; // blue
+      default: return "#9ca3af";               // gray
+    }
+  }
+  function renderPlayerList(players) {
+    if (!players.length) { modalList.textContent = "No players reported."; return; }
+    const rows = players.map(p => {
+      const avatar = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.id}&width=48&height=48&format=png`;
+      const roleCls = (p.role === "operator") ? "net-role-operator" :
+                      (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" : "net-role-passenger";
+      const topStats = Object.entries(p.stats || {}).slice(0,3).map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
+      return `
+        <div class="net-list-item">
+          <img src="${avatar}" alt="" width="36" height="36" style="border-radius:50%;border:1px solid var(--bd)">
+          <div style="flex:1">
+            <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
+            <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
+            <div class="net-hint">ID: ${p.id}</div>
+          </div>
+        </div>`;
+    }).join("");
+    modalList.innerHTML = rows;
+  }
+  function renderMapDots(players) {
+    const ctx = modalCanvas.getContext("2d");
+    const w = modalMapImg.naturalWidth || modalMapImg.width;
+    const h = modalMapImg.naturalHeight || modalMapImg.height;
+    modalCanvas.width = modalMapImg.clientWidth;
+    modalCanvas.height = modalMapImg.clientHeight;
+    const sx = modalCanvas.width / w;
+    const sy = modalCanvas.height / h;
+
+    ctx.clearRect(0,0,modalCanvas.width, modalCanvas.height);
+    players.forEach(p => {
+      if (!p.pos) return;
+      const [px, py] = worldToMap(p.pos.x, p.pos.z, w, h);
+      const dx = px * sx, dy = py * sy;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 6, 0, Math.PI*2);
+      ctx.fillStyle = roleColor(p.role);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(0,0,0,.4)";
+      ctx.stroke();
+    });
+  }
+  async function fetchAndRenderPlayers() {
+    if (!modalJobId) return;
+    const data = await fetchPlayersForServer(LOWER_MYSTIC_PLACE_ID, modalJobId);
+    const players = Array.isArray(data.players) ? data.players : [];
+    modalUpdated.textContent = data.updatedAtISO ? new Date(data.updatedAtISO).toLocaleTimeString() : "–";
+    renderPlayerList(players);
+    if (modalMapImg.complete) renderMapDots(players);
+    else modalMapImg.onload = () => renderMapDots(players);
+  }
+
   // Start
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live v2 (KV uptime) === -->
+<!-- === /NET Live v2 === -->
+
+</body>
+</html>
