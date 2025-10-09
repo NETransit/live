@@ -141,63 +141,53 @@
 <script>
   // ===== Config =====
   const WORKER_BASE = "https://live.contact-b46.workers.dev";   // public stats worker
-  const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev"; // new ingest worker
-  const UNIVERSE_ID = "8731366500";      // Universe
+  const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev"; // ingest worker (players)
+  const UNIVERSE_ID = "8731366500";
   const SERVER_TYPE = "Public";
-  const JOIN_OPEN_NEW_TAB = false;       // web fallback opens in same tab by default
+  const JOIN_OPEN_NEW_TAB = false;
   const LOWER_MYSTIC_PLACE_ID = "79519172222138";
 
-  // --- Map projection config (update bounds for your map) ---
-  const MAP_CFG = {
-    // World bounds (X/Z plane). Set these to your real playable extents in Studio.
-    worldMinX: -1200, worldMaxX: 1200,
-    worldMinZ: -800,  worldMaxZ: 800,
-  };
+  // Map bounds (kept as before)
+  const MAP_CFG = { worldMinX:-1200, worldMaxX:1200, worldMinZ:-800, worldMaxZ:800 };
 
   // ===== Elements =====
-  const rootEl       = document.getElementById("net-live");
-  const themeBtn     = document.getElementById("themeToggle");
-  const placeSelect  = document.getElementById("net-place");
-  const tableEl      = document.getElementById("net-table");
-  const cardTableEl  = document.getElementById("net-card-table");
-  const uPlayersEl   = document.getElementById("uPlayers");
-  const srvShownEl   = document.getElementById("srvShown");
+  const rootEl = document.getElementById("net-live");
+  const themeBtn = document.getElementById("themeToggle");
+  const placeSelect = document.getElementById("net-place");
+  const tableEl = document.getElementById("net-table");
+  const uPlayersEl = document.getElementById("uPlayers");
+  const srvShownEl = document.getElementById("srvShown");
   const srvPlayersEl = document.getElementById("srvPlayers");
-  const peakValEl    = document.getElementById("peakVal");
-  const peakWhenEl   = document.getElementById("peakWhen");
-  const loadBtn      = document.getElementById("net-load");
-  const loadAllBtn   = document.getElementById("net-loadall");
-  const pageHint     = document.getElementById("net-pagehint");
-  const fltRegion    = document.getElementById("flt-region");
-  const fltFPS       = document.getElementById("flt-fps");
-  const fltNonEmpty  = document.getElementById("flt-nonempty");
-  const fltReset     = document.getElementById("flt-reset");
-  const fltSearch    = document.getElementById("flt-search");
-  const fallbackBox  = document.getElementById("net-fallback");
-  const summaryEl    = document.getElementById("net-summary");
+  const peakValEl = document.getElementById("peakVal");
+  const peakWhenEl = document.getElementById("peakWhen");
+  const loadBtn = document.getElementById("net-load");
+  const loadAllBtn = document.getElementById("net-loadall");
+  const pageHint = document.getElementById("net-pagehint");
+  const fltRegion = document.getElementById("flt-region");
+  const fltFPS = document.getElementById("flt-fps");
+  const fltNonEmpty = document.getElementById("flt-nonempty");
+  const fltReset = document.getElementById("flt-reset");
+  const fltSearch = document.getElementById("flt-search");
+  const fallbackBox = document.getElementById("net-fallback");
+  const summaryEl = document.getElementById("net-summary");
 
-  // ===== Theme (auto + toggle) =====
+  // ===== Theme =====
   const savedTheme = localStorage.getItem("net-theme");
   const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   setTheme(savedTheme || (prefersDark ? "dark" : "light"));
   themeBtn.addEventListener("click", ()=> setTheme(rootEl.dataset.theme === "dark" ? "light" : "dark"));
-  function setTheme(mode){
-    rootEl.dataset.theme = mode;
-    localStorage.setItem("net-theme", mode);
-  }
+  function setTheme(m){ rootEl.dataset.theme = m; localStorage.setItem("net-theme", m); }
 
   // ===== State =====
   let currentPlaceId = placeSelect.value;
-  let items = [];         // accumulated raw servers
-  let nextCursor = null;  // pagination cursor
+  let items = [];
+  let nextCursor = null;
   let loading = false;
+  const filters = { region:"", minFps:0, nonEmpty:false, search:"" };
 
-  // Filters state
-  const filters = { region: "", minFps: 0, nonEmpty: false, search: "" };
-
-  // Peak tracker (local)
+  // ===== Peak tracker =====
   const PEAK_KEY = "net_peak_universe";
-  const peakStore = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}"); // {val, whenISO}
+  const peakStore = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}");
   if (peakStore.val) {
     peakValEl.textContent = peakStore.val;
     peakWhenEl.textContent = `(${new Date(peakStore.whenISO).toLocaleString()})`;
@@ -206,8 +196,8 @@
   // ===== API =====
   async function fetchSummary(placeId) {
     const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error(`API ${res.status}`);
+    const res = await fetch(url, { cache:"no-store" }).catch(() => null);
+    if (!res || !res.ok) { console.warn("summary fetch failed", res && res.status); return null; } // tolerate 500s
     return res.json();
   }
   async function fetchServers(placeId, cursor = "") {
@@ -215,12 +205,12 @@
     url.searchParams.set("placeId", placeId);
     url.searchParams.set("serverType", SERVER_TYPE);
     if (cursor) url.searchParams.set("cursor", cursor);
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    return res.json(); // { items, nextPageCursor }
+    const res = await fetch(url.toString(), { cache:"no-store" }).catch(() => null);
+    if (!res || !res.ok) { console.warn("servers fetch failed", res && res.status); return { items:[], nextPageCursor:null }; }
+    return res.json();
   }
 
-  // ===== Join (deep link same tab + manual fallback) =====
+  // ===== Join (same-tab deep link + manual fallback) =====
   function showFallback(jobId, placeId) {
     const web = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
     fallbackBox.innerHTML = `
@@ -238,17 +228,17 @@
     hideFallback();
     const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
     let opened = false;
-    const onVisibility = () => { if (document.hidden) { opened = true; cleanup(); } };
-    const onPageHide = () => { opened = true; cleanup(); };
-    function cleanup(){ document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("pagehide", onPageHide); }
-    document.addEventListener("visibilitychange", onVisibility, { once:true });
-    window.addEventListener("pagehide", onPageHide, { once:true });
+    const onVis = () => { if (document.hidden) { opened = true; cleanup(); } };
+    const onHide = () => { opened = true; cleanup(); };
+    function cleanup(){ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onHide); }
+    document.addEventListener("visibilitychange", onVis, { once:true });
+    window.addEventListener("pagehide", onHide, { once:true });
     window.location.assign(deep);
     setTimeout(()=>{ if (!opened && !document.hidden) showFallback(jobId, placeId); cleanup(); }, 1000);
   }
   window.joinServer = joinServer;
 
-  // ===== Utils =====
+  // ===== Filters =====
   function applyFilters(list){
     const q = filters.search.trim().toLowerCase();
     return list.filter(s=>{
@@ -289,16 +279,16 @@
 
     if (typeof playersUniverse === "number") {
       uPlayersEl.textContent = playersUniverse;
-      // Peak tracker
-      const prev = Number(peakStore.val || 0);
+      const prev = Number((JSON.parse(localStorage.getItem(PEAK_KEY) || "{}").val) || 0);
       if (playersUniverse > prev){
         const when = new Date().toISOString();
         localStorage.setItem(PEAK_KEY, JSON.stringify({ val: playersUniverse, whenISO: when }));
         peakValEl.textContent = playersUniverse;
         peakWhenEl.textContent = `(${new Date(when).toLocaleString()})`;
       } else {
-        peakValEl.textContent = peakStore.val ?? "–";
-        peakWhenEl.textContent = peakStore.whenISO ? `(${new Date(peakStore.whenISO).toLocaleString()})` : "";
+        const store = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}");
+        peakValEl.textContent = store.val ?? "–";
+        peakWhenEl.textContent = store.whenISO ? `(${new Date(store.whenISO).toLocaleString()})` : "";
       }
     }
   }
@@ -348,40 +338,34 @@
       loading = true;
       tableEl.textContent = "Loading servers…";
       const summary = await fetchSummary(currentPlaceId);
-      pulse(summaryEl);
-      const playersUniverse = summary.playersUniverse ?? null;
-
-      items = Array.isArray(summary.servers) ? summary.servers : [];
-      nextCursor = summary.nextCursor || null;
-
-      populateRegionFilter(items);
-      renderSummary(playersUniverse);
-      renderServers(items);
-    }catch(e){
-      console.error(e);
-      tableEl.textContent = "Error loading stats.";
-      loadBtn.style.display = loadAllBtn.style.display = "none";
-      pageHint.textContent = "";
+      if (summary) {
+        pulse(summaryEl);
+        items = Array.isArray(summary.servers) ? summary.servers : [];
+        nextCursor = summary.nextCursor || null;
+        populateRegionFilter(items);
+        renderSummary(summary.playersUniverse ?? null);
+        renderServers(items);
+      } else {
+        // render empty state but keep trying via poller
+        items = []; nextCursor = null;
+        renderSummary(null); renderServers([]);
+      }
     }finally{ loading = false; }
   }
 
   async function pollFirstPage(){
     if (loading) return;
-    try{
-      const summary = await fetchSummary(currentPlaceId);
-      pulse(summaryEl);
-      const playersUniverse = summary.playersUniverse ?? null;
-
-      const first = Array.isArray(summary.servers) ? summary.servers : [];
-      const map = new Map(items.map(i=>[i.id,i]));
-      first.forEach(i=>map.set(i.id,i));
-      items = Array.from(map.values());
-      nextCursor = summary.nextCursor || nextCursor;
-
-      populateRegionFilter(items);
-      renderSummary(playersUniverse);
-      renderServers(items);
-    }catch(e){ /* ignore one-off */ }
+    const summary = await fetchSummary(currentPlaceId);
+    if (!summary) return;
+    pulse(summaryEl);
+    const first = Array.isArray(summary.servers) ? summary.servers : [];
+    const map = new Map(items.map(i=>[i.id,i]));
+    first.forEach(i=>map.set(i.id,i));
+    items = Array.from(map.values());
+    nextCursor = summary.nextCursor || nextCursor;
+    populateRegionFilter(items);
+    renderSummary(summary.playersUniverse ?? null);
+    renderServers(items);
   }
 
   // ===== Events =====
@@ -392,10 +376,10 @@
     bootstrapFirstPage();
   });
 
-  loadBtn.addEventListener("click", async ()=>{
+  document.getElementById("net-load").addEventListener("click", async ()=>{
     if (!nextCursor || loading) return;
     try{
-      loading = true; loadBtn.textContent = "Loading…";
+      loading = true; this.textContent = "Loading…";
       const page = await fetchServers(currentPlaceId, nextCursor);
       const newItems = Array.isArray(page.items)?page.items:[];
       nextCursor = page.nextPageCursor || null;
@@ -403,14 +387,13 @@
       newItems.forEach(i=>{ if(!existing.has(i.id)) items.push(i); });
       populateRegionFilter(items);
       renderSummary(); renderServers(items);
-    }catch(e){ console.error(e); pageHint.textContent = "Error loading more."; }
-    finally{ loadBtn.textContent = "Load more"; loading = false; }
+    }finally{ this.textContent = "Load more"; loading = false; }
   });
 
-  loadAllBtn.addEventListener("click", async ()=>{
+  document.getElementById("net-loadall").addEventListener("click", async ()=>{
     if (loading) return;
     try{
-      loading = true; loadAllBtn.textContent = "Loading all…";
+      loading = true; this.textContent = "Loading all…";
       while(nextCursor){
         const page = await fetchServers(currentPlaceId, nextCursor);
         const newItems = Array.isArray(page.items)?page.items:[];
@@ -420,8 +403,7 @@
       }
       populateRegionFilter(items);
       renderSummary(); renderServers(items);
-    }catch(e){ console.error(e); pageHint.textContent = "Error loading all."; }
-    finally{ loadAllBtn.textContent = "Load all"; loading = false; }
+    }finally{ this.textContent = "Load all"; loading = false; }
   });
 
   function onFilterChange(){
@@ -437,7 +419,7 @@
   fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; fltSearch.value=""; onFilterChange(); });
   fltSearch.addEventListener("input", onFilterChange);
 
-  // ===== Modal: Players + Map (Lower Mystic only) =====
+  // ===== Modal (Players + Map) =====
   const modalRoot = document.createElement("div");
   modalRoot.className = "net-modal-backdrop";
   modalRoot.id = "net-modal-root";
@@ -457,8 +439,7 @@
       <div class="net-modal-body">
         <div class="net-list" id="m-list">Loading players…</div>
         <div class="net-map-wrap">
-          <!-- Replace with your 2D map image path -->
-          <img id="m-map" class="net-map" src="images/lower-mystic-map.png" alt="Lower Mystic Map">
+          <img id="m-map" class="net-map" alt="Lower Mystic Map" referrerpolicy="no-referrer">
           <canvas id="m-canvas" class="net-canvas"></canvas>
         </div>
       </div>
@@ -472,6 +453,16 @@
   const modalUpdated = document.getElementById("m-updated");
   const modalCloseBtn = document.getElementById("m-close");
 
+  // Try to load your map file; if missing (404), use a neutral placeholder
+  (function ensureMap(){
+    const test = new Image();
+    test.onload = ()=>{ modalMapImg.src = "images/lower-mystic-map.png"; };
+    test.onerror = ()=>{ modalMapImg.src = `data:image/svg+xml;utf8,${encodeURIComponent(
+      "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='600'><rect width='100%' height='100%' fill='#f3f4f6'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='system-ui' font-size='18' fill='#6b7280'>Map image not found — add images/lower-mystic-map.png</text></svg>"
+    )}`; };
+    test.src = "images/lower-mystic-map.png";
+  })();
+
   let modalTimer = null;
   let modalJobId = null;
 
@@ -481,13 +472,11 @@
     modalJob.textContent = jobId.slice(0,8) + "…";
     modalUpdated.textContent = "–";
     modalList.textContent = "Loading players…";
-
     modalRoot.style.display = "flex";
     modalRoot.setAttribute("aria-hidden", "false");
-
-    fetchAndRenderPlayers().catch(()=>{});
+    fetchAndRenderPlayers().catch(()=>{ modalList.textContent = "Unable to load players right now."; });
     clearInterval(modalTimer);
-    modalTimer = setInterval(fetchAndRenderPlayers, 60000); // 60s poll while open
+    modalTimer = setInterval(fetchAndRenderPlayers, 60000);
   }
   function closeServerModal() {
     modalRoot.style.display = "none";
@@ -502,8 +491,8 @@
 
   async function fetchPlayersForServer(placeId, jobId) {
     const url = `${GAME_WORKER_BASE}/api/players?placeId=${placeId}&jobId=${jobId}`;
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) throw new Error("players API");
+    const res = await fetch(url, { cache: "no-store" }).catch(()=>null);
+    if (!res || !res.ok) throw new Error("players API");
     return res.json();
   }
 
@@ -512,44 +501,125 @@
     const u = (x - worldMinX) / (worldMaxX - worldMinX);
     const v = (z - worldMinZ) / (worldMaxZ - worldMinZ);
     const px = Math.max(0, Math.min(imgW, u * imgW));
-    const py = Math.max(0, Math.min(imgH, (1 - v) * imgH)); // invert vertical
+    const py = Math.max(0, Math.min(imgH, (1 - v) * imgH));
     return [px, py];
   }
   function roleColor(role) {
     switch (String(role || "").toLowerCase()) {
-      case "operator": return "#ffd54a";       // yellow
+      case "operator": return "#ffd54a";
       case "transit_police":
-      case "transit police": return "#60a5fa"; // blue
-      default: return "#9ca3af";               // gray
+      case "transit police": return "#60a5fa";
+      default: return "#9ca3af";
     }
   }
-  function renderPlayerList(players) {
-  if (!players.length) { modalList.textContent = "No players reported."; return; }
-  const rows = players.map(p => {
-    const roleCls =
-      (p.role === "operator") ? "net-role-operator" :
-      (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" :
-      "net-role-passenger";
-    const topStats = Object.entries(p.stats || {}).slice(0,3)
-      .map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
-    return `
-      <div class="net-list-item">
-        <!-- NOTE: no src here; the hydrator will fill it -->
-        <img data-rbx-user="${p.id}" width="36" height="36"
-             alt="avatar ${p.id}"
-             style="border-radius:50%;border:1px solid var(--bd)">
-        <div style="flex:1">
-          <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
-          <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
-          <div class="net-hint">ID: ${p.id}</div>
-        </div>
-      </div>`;
-  }).join("");
-  modalList.innerHTML = rows;
 
-  // ✅ hydrate newly inserted <img data-rbx-user="...">
-  hydrateHeadshots(modalList, "48x48");
-}
+  // ---------- Avatar Hydration (CORS-safe with fallbacks) ----------
+  const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v2";
+  const RBX_AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
+  let _rbxAvatarCache = (() => {
+    try {
+      const raw = localStorage.getItem(RBX_AVATAR_CACHE_KEY);
+      const obj = raw ? JSON.parse(raw) : { t: 0, map: {} };
+      if (!obj.t || (Date.now() - obj.t) > RBX_AVATAR_TTL_MS) return { t: Date.now(), map: {} };
+      return obj;
+    } catch { return { t: Date.now(), map: {} }; }
+  })();
+  function saveAvatarCache() { try { localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); } catch {} }
+
+  async function fetchHeadshotsCORS(ids, size="48x48") {
+    // Try Roblox Thumbnails API (may fail due to CORS on your origin)
+    try {
+      const u = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`;
+      const r = await fetch(u, { cache:"no-store" });
+      if (r.ok) {
+        const j = await r.json();
+        const map = {};
+        (j.data||[]).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
+        return map;
+      }
+    } catch {}
+    // Fallback: RoProxy mirror (CORS-friendly)
+    try {
+      const u = `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`;
+      const r = await fetch(u, { cache:"no-store" });
+      if (r.ok) {
+        const j = await r.json();
+        const map = {};
+        (j.data||[]).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
+        return map;
+      }
+    } catch {}
+    // Last resort: use legacy per-user image URL directly
+    const map = {};
+    ids.forEach(id => { map[String(id)] = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`; });
+    return map;
+  }
+
+  async function hydrateHeadshots(container = document, size = "48x48") {
+    const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]'));
+    if (!nodes.length) return;
+
+    const ids = Array.from(new Set(nodes.map(n => String(n.dataset.rbxUser).trim()).filter(Boolean)));
+    const need = ids.filter(id => !_rbxAvatarCache.map[id]);
+
+    while (need.length) {
+      const chunk = need.splice(0, 100);
+      const map = await fetchHeadshotsCORS(chunk, size);
+      Object.assign(_rbxAvatarCache.map, map);
+    }
+    _rbxAvatarCache.t = Date.now();
+    saveAvatarCache();
+
+    nodes.forEach(img => {
+      const id = String(img.dataset.rbxUser).trim();
+      const src = _rbxAvatarCache.map[id];
+      img.referrerPolicy = "no-referrer";     // avoid referer quirks
+      img.decoding = "async";
+      img.loading = img.loading || "lazy";
+      img.alt = img.alt || `Roblox avatar ${id}`;
+
+      if (src) {
+        img.src = src;
+        img.onerror = () => {
+          // if CDN URL 404s later, try RoProxy direct passthrough once
+          img.onerror = null;
+          img.src = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`;
+        };
+      } else {
+        // Neutral placeholder
+        img.src = `data:image/svg+xml;utf8,${encodeURIComponent(
+          "<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><circle cx='24' cy='24' r='24' fill='#e5e7eb'/><circle cx='24' cy='18' r='8' fill='#cbd5e1'/><rect x='10' y='30' width='28' height='12' rx='6' fill='#cbd5e1'/></svg>"
+        )}`;
+      }
+    });
+  }
+
+  // ---------- Players modal rendering ----------
+  function renderPlayerList(players) {
+    if (!players.length) { modalList.textContent = "No players reported."; return; }
+    const rows = players.map(p => {
+      const roleCls =
+        (p.role === "operator") ? "net-role-operator" :
+        (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" :
+        "net-role-passenger";
+      const topStats = Object.entries(p.stats || {}).slice(0,3)
+        .map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
+      return `
+        <div class="net-list-item">
+          <img data-rbx-user="${p.id}" width="36" height="36"
+               alt="avatar ${p.id}"
+               style="border-radius:50%;border:1px solid var(--bd)">
+          <div style="flex:1">
+            <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
+            <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
+            <div class="net-hint">ID: ${p.id}</div>
+          </div>
+        </div>`;
+    }).join("");
+    modalList.innerHTML = rows;
+    hydrateHeadshots(modalList, "48x48");  // ✅ hydrate after inject
+  }
+
   function renderMapDots(players) {
     const ctx = modalCanvas.getContext("2d");
     const w = modalMapImg.naturalWidth || modalMapImg.width;
@@ -573,6 +643,7 @@
       ctx.stroke();
     });
   }
+
   async function fetchAndRenderPlayers() {
     if (!modalJobId) return;
     const data = await fetchPlayersForServer(LOWER_MYSTIC_PLACE_ID, modalJobId);
@@ -583,92 +654,9 @@
     else modalMapImg.onload = () => renderMapDots(players);
   }
 
-  // Start
+  // ===== Start =====
   bootstrapFirstPage();
   setInterval(pollFirstPage, 15000);
 </script>
-<!-- === /NET Live v2 === -->
-<script>
-/** Simple in-memory + localStorage cache (24h TTL) */
-const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v1";
-const RBX_AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
-let _rbxAvatarCache = (() => {
-  try {
-    const raw = localStorage.getItem(RBX_AVATAR_CACHE_KEY);
-    const obj = raw ? JSON.parse(raw) : { t: Date.now(), map: {} };
-    if (!obj.t || (Date.now() - obj.t) > RBX_AVATAR_TTL_MS) return { t: Date.now(), map: {} };
-    return obj;
-  } catch { return { t: Date.now(), map: {} }; }
-})();
-
-function saveAvatarCache() {
-  try { localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); } catch {}
-}
-
-/** Fetch headshots in batches (Roblox allows up to ~100 ids per call) */
-async function fetchHeadshots(ids, size = "48x48") {
-  const url = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("Thumbnails API error");
-  const data = await res.json();
-  const map = {};
-  (data.data || []).forEach(d => {
-    map[String(d.targetId)] = (d.state === "Completed") ? d.imageUrl : null;
-  });
-  return map;
-}
-
-/** Public: hydrate any <img data-rbx-user="ID"> inside a container (or document) */
-async function hydrateHeadshots(container = document, size = "48x48") {
-  const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]'));
-  if (!nodes.length) return;
-
-  // collect unique ids, split into "need fetch" vs "cached"
-  const ids = Array.from(new Set(nodes.map(n => String(n.dataset.rbxUser).trim()).filter(Boolean)));
-  const need = ids.filter(id => !_rbxAvatarCache.map[id]);
-
-  // fetch in batches of 100
-  while (need.length) {
-    const chunk = need.splice(0, 100);
-    try {
-      const map = await fetchHeadshots(chunk, size);
-      Object.assign(_rbxAvatarCache.map, map);
-    } catch (e) {
-      console.warn("Headshot fetch failed:", e);
-      // mark as null to avoid hammering
-      chunk.forEach(id => { _rbxAvatarCache.map[id] = null; });
-    }
-  }
-  _rbxAvatarCache.t = Date.now();
-  saveAvatarCache();
-
-  // apply
-  nodes.forEach(img => {
-    const id = String(img.dataset.rbxUser).trim();
-    const src = _rbxAvatarCache.map[id];
-    if (src) {
-      img.src = src;
-    } else {
-      // fallback: simple placeholder circle
-      img.src = `data:image/svg+xml;utf8,` + encodeURIComponent(
-        `<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'>
-           <circle cx='24' cy='24' r='24' fill='#e5e7eb'/>
-           <circle cx='24' cy='18' r='8' fill='#cbd5e1'/>
-           <rect x='10' y='30' width='28' height='12' rx='6' fill='#cbd5e1'/>
-         </svg>`
-      );
-    }
-    img.alt = img.alt || `Roblox avatar ${id}`;
-    img.decoding = "async";
-    img.loading = img.loading || "lazy";
-  });
-}
-
-// OPTIONAL: call this after you render your player list/modal
-// Example: hydrateHeadshots(modalElement);
-// Or globally after DOM updates:
-document.addEventListener("DOMContentLoaded", () => hydrateHeadshots());
-</script>
-
 </body>
 </html>
