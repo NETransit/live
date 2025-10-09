@@ -580,6 +580,87 @@
   setInterval(pollFirstPage, 15000);
 </script>
 <!-- === /NET Live v2 === -->
+<script>
+/** Simple in-memory + localStorage cache (24h TTL) */
+const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v1";
+const RBX_AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
+let _rbxAvatarCache = (() => {
+  try {
+    const raw = localStorage.getItem(RBX_AVATAR_CACHE_KEY);
+    const obj = raw ? JSON.parse(raw) : { t: Date.now(), map: {} };
+    if (!obj.t || (Date.now() - obj.t) > RBX_AVATAR_TTL_MS) return { t: Date.now(), map: {} };
+    return obj;
+  } catch { return { t: Date.now(), map: {} }; }
+})();
+
+function saveAvatarCache() {
+  try { localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); } catch {}
+}
+
+/** Fetch headshots in batches (Roblox allows up to ~100 ids per call) */
+async function fetchHeadshots(ids, size = "48x48") {
+  const url = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("Thumbnails API error");
+  const data = await res.json();
+  const map = {};
+  (data.data || []).forEach(d => {
+    map[String(d.targetId)] = (d.state === "Completed") ? d.imageUrl : null;
+  });
+  return map;
+}
+
+/** Public: hydrate any <img data-rbx-user="ID"> inside a container (or document) */
+async function hydrateHeadshots(container = document, size = "48x48") {
+  const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]'));
+  if (!nodes.length) return;
+
+  // collect unique ids, split into "need fetch" vs "cached"
+  const ids = Array.from(new Set(nodes.map(n => String(n.dataset.rbxUser).trim()).filter(Boolean)));
+  const need = ids.filter(id => !_rbxAvatarCache.map[id]);
+
+  // fetch in batches of 100
+  while (need.length) {
+    const chunk = need.splice(0, 100);
+    try {
+      const map = await fetchHeadshots(chunk, size);
+      Object.assign(_rbxAvatarCache.map, map);
+    } catch (e) {
+      console.warn("Headshot fetch failed:", e);
+      // mark as null to avoid hammering
+      chunk.forEach(id => { _rbxAvatarCache.map[id] = null; });
+    }
+  }
+  _rbxAvatarCache.t = Date.now();
+  saveAvatarCache();
+
+  // apply
+  nodes.forEach(img => {
+    const id = String(img.dataset.rbxUser).trim();
+    const src = _rbxAvatarCache.map[id];
+    if (src) {
+      img.src = src;
+    } else {
+      // fallback: simple placeholder circle
+      img.src = `data:image/svg+xml;utf8,` + encodeURIComponent(
+        `<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'>
+           <circle cx='24' cy='24' r='24' fill='#e5e7eb'/>
+           <circle cx='24' cy='18' r='8' fill='#cbd5e1'/>
+           <rect x='10' y='30' width='28' height='12' rx='6' fill='#cbd5e1'/>
+         </svg>`
+      );
+    }
+    img.alt = img.alt || `Roblox avatar ${id}`;
+    img.decoding = "async";
+    img.loading = img.loading || "lazy";
+  });
+}
+
+// OPTIONAL: call this after you render your player list/modal
+// Example: hydrateHeadshots(modalElement);
+// Or globally after DOM updates:
+document.addEventListener("DOMContentLoaded", () => hydrateHeadshots());
+</script>
 
 </body>
 </html>
