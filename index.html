@@ -77,6 +77,7 @@
     <strong>Players in Shown:</strong> <span id="srvPlayers">–</span> •
     <strong>Peak:</strong> <span id="peakVal">–</span> <span class="net-hint" id="peakWhen"></span>
     <div class="net-hint">Auto-updates every 15s • Peak is saved locally in your browser</div>
+    <div class="net-hint" id="sourceBadge" style="margin-top:6px"></div>
   </div>
 
   <div class="net-controls">
@@ -98,9 +99,7 @@
     <label>Min FPS:
       <input id="flt-fps" type="number" step="1" min="0" placeholder="0">
     </label>
-    <label class="chip">
-      <input id="flt-nonempty" type="checkbox"> Only non-empty
-    </label>
+    <label class="chip"><input id="flt-nonempty" type="checkbox"> Only non-empty</label>
     <button id="flt-reset" class="btn ghost">Reset filters</button>
   </div>
 
@@ -121,18 +120,22 @@
 </section>
 
 <script>
-/*** CONFIG ***/
-const WORKER_BASE = "https://live.contact-b46.workers.dev";
+/* ========= Config ========= */
+const WORKER_BASE = "https://live.contact-b46.workers.dev";  // primary (can 500 when upstream 429)
 const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev";
 const UNIVERSE_ID = "8731366500";
 const SERVER_TYPE = "Public";
 const JOIN_OPEN_NEW_TAB = false;
 const LOWER_MYSTIC_PLACE_ID = "79519172222138";
 
-// Map bounds
-const MAP_CFG = { worldMinX:-1200, worldMaxX:1200, worldMinZ:-800, worldMaxZ:800 };
+/* Roblox mirrors (CORS-friendly) used when worker fails) */
+const GAME_MIRRORS = [
+  "https://games.roproxy.com",
+  "https://games.rprxy.xyz",
+  "https://games.roproxy.dev"
+];
 
-/*** ELEMENTS ***/
+/* ========= Elements ========= */
 const rootEl = document.getElementById("net-live");
 const themeBtn = document.getElementById("themeToggle");
 const placeSelect = document.getElementById("net-place");
@@ -152,88 +155,125 @@ const fltReset = document.getElementById("flt-reset");
 const fltSearch = document.getElementById("flt-search");
 const fallbackBox = document.getElementById("net-fallback");
 const summaryEl = document.getElementById("net-summary");
+const sourceBadge = document.getElementById("sourceBadge");
 
-/*** THEME ***/
+/* ========= Theme ========= */
 const savedTheme = localStorage.getItem("net-theme");
 const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 setTheme(savedTheme || (prefersDark ? "dark" : "light"));
 themeBtn.addEventListener("click", ()=> setTheme(rootEl.dataset.theme === "dark" ? "light" : "dark"));
-function setTheme(m){ rootEl.dataset.theme=m; localStorage.setItem("net-theme", m); }
+function setTheme(m){ rootEl.dataset.theme = m; localStorage.setItem("net-theme", m); }
 
-/*** STATE ***/
+/* ========= State ========= */
 let currentPlaceId = placeSelect.value;
 let items = [];
 let nextCursor = null;
 let loading = false;
+let usingFallback = false;          // true = using Roblox mirrors
+let fallbackUntil = 0;              // timestamp while we stay on mirrors to cool worker
 const filters = { region:"", minFps:0, nonEmpty:false, search:"" };
 
-/*** PEAK TRACKER ***/
+/* ========= Peak tracker ========= */
 const PEAK_KEY = "net_peak_universe";
 const peakStore = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}");
 if (peakStore.val) { peakValEl.textContent = peakStore.val; peakWhenEl.textContent = `(${new Date(peakStore.whenISO).toLocaleString()})`; }
 
-/*** FETCH HELPERS (timeouts + retry) ***/
-async function fetchJSON(url, {timeoutMs=8000, retries=0} = {}) {
-  for (let attempt=0; attempt<=retries; attempt++){
+/* ========= Small helpers ========= */
+function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
+function now(){ return Date.now(); }
+
+/* Fetch with timeout + retries */
+async function fetchJSON(url, {timeoutMs=8000, retries=0, retryOn=[429,500]} = {}){
+  for (let i=0;i<=retries;i++){
     const ac = new AbortController();
-    const timer = setTimeout(()=>ac.abort(), timeoutMs);
+    const t = setTimeout(()=>ac.abort(), timeoutMs);
     try {
       const res = await fetch(url, { cache:"no-store", signal:ac.signal });
-      clearTimeout(timer);
-      if (!res.ok) throw new Error(String(res.status));
+      clearTimeout(t);
+      if (!res.ok){
+        if (retryOn.includes(res.status) && i<retries){
+          await new Promise(r=>setTimeout(r, 400*(i+1)));
+          continue;
+        }
+        const txt = await res.text().catch(()=>String(res.status));
+        throw new Error(`${res.status} ${txt}`);
+      }
       return await res.json();
-    } catch (e) {
-      clearTimeout(timer);
-      if (attempt === retries) throw e;
-      await new Promise(r=>setTimeout(r, 400*(attempt+1)));
+    } catch (e){
+      clearTimeout(t);
+      if (i===retries) throw e;
+      await new Promise(r=>setTimeout(r, 400*(i+1)));
     }
   }
 }
 
-async function fetchSummary(placeId){
+/* ========= Primary APIs (Worker first, then Mirrors) ========= */
+async function apiSummaryWorker(placeId){
   const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
-  try {
-    return await fetchJSON(url, { retries: 1 });
-  } catch { return null; }
+  return fetchJSON(url, { retries: 1 });
+}
+async function apiServersWorker(placeId, cursor=""){
+  const u = new URL(`${WORKER_BASE}/api/servers`);
+  u.searchParams.set("placeId", placeId);
+  u.searchParams.set("serverType", SERVER_TYPE);
+  if (cursor) u.searchParams.set("cursor", cursor);
+  return fetchJSON(u.toString(), { retries: 1 });
 }
 
-async function fetchServers(placeId, cursor=""){
-  const url = new URL(`${WORKER_BASE}/api/servers`);
-  url.searchParams.set("placeId", placeId);
-  url.searchParams.set("serverType", SERVER_TYPE);
-  if (cursor) url.searchParams.set("cursor", cursor);
-  try {
-    return await fetchJSON(url.toString(), { retries: 1 });
-  } catch { return { items:[], nextPageCursor:null }; }
+/* Direct to Roblox (via mirrors) */
+async function apiServersDirect(placeId, cursor=""){
+  // try mirrors in order; retry on 429 with small backoff
+  for (let m=0; m<GAME_MIRRORS.length; m++){
+    const base = GAME_MIRRORS[m];
+    let url = `${base}/v1/games/${placeId}/servers/${SERVER_TYPE}?sortOrder=Asc&limit=100`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    try{
+      const json = await fetchJSON(url, { retries: 2, retryOn:[429,500] });
+      // normalize to worker shape:
+      return { items: json.data || [], nextPageCursor: json.nextPageCursor || null };
+    }catch(e){
+      // go to next mirror
+      continue;
+    }
+  }
+  throw new Error("All mirrors failed");
 }
 
-/*** JOIN (same-tab deep link + manual fallback) ***/
+/* Build "summary" client-side from /servers direct */
+async function buildSummaryFromDirect(placeId){
+  // We only need first page for UI; universePlayers = sum of playing across fetched pages (approx).
+  const first = await apiServersDirect(placeId);
+  let items = first.items;
+  let cursor = first.nextPageCursor;
+  // (Optional) you can pull more pages here if you want a total players sum; we keep it light.
+  const playersTotal = items.reduce((n,s)=>n+(s.playing||0),0);
+  return { playersUniverse: playersTotal, servers: items, nextCursor: cursor };
+}
+
+/* ========= Join deep link ========= */
 function showFallback(jobId, placeId){
   const web = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
   fallbackBox.innerHTML = `<div style="border:1px solid var(--bd);border-radius:10px;padding:10px">
     Having trouble launching Roblox? <button class="btn ghost" id="net-open-web">Open via web launcher</button>
   </div>`;
   fallbackBox.style.display="block";
-  document.getElementById("net-open-web").onclick = () => {
-    if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener"); else window.location.href = web;
-  };
+  document.getElementById("net-open-web").onclick = ()=>{ if (JOIN_OPEN_NEW_TAB) window.open(web,"_blank","noopener"); else window.location.href = web; };
 }
 function hideFallback(){ fallbackBox.style.display="none"; fallbackBox.innerHTML=""; }
 function joinServer(placeId, jobId){
   hideFallback();
   const deep = `roblox://placeId=${placeId}&gameInstanceId=${jobId}`;
-  let opened = false;
-  const onVis = () => { if (document.hidden){ opened=true; cleanup(); } };
-  const onHide = () => { opened=true; cleanup(); };
-  function cleanup(){ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onHide); }
-  document.addEventListener("visibilitychange", onVis, { once:true });
-  window.addEventListener("pagehide", onHide, { once:true });
+  let opened=false;
+  const vis=()=>{ if(document.hidden){ opened=true; clean(); } };
+  const hid=()=>{ opened=true; clean(); };
+  function clean(){ document.removeEventListener("visibilitychange",vis); window.removeEventListener("pagehide",hid); }
+  document.addEventListener("visibilitychange",vis,{once:true}); window.addEventListener("pagehide",hid,{once:true});
   window.location.assign(deep);
-  setTimeout(()=>{ if (!opened && !document.hidden) showFallback(jobId, placeId); cleanup(); }, 1000);
+  setTimeout(()=>{ if(!opened && !document.hidden) showFallback(jobId,placeId); clean(); }, 1000);
 }
 window.joinServer = joinServer;
 
-/*** FILTERS / UTILS ***/
+/* ========= Filters / Render ========= */
 function applyFilters(list){
   const q = filters.search.trim().toLowerCase();
   return list.filter(s=>{
@@ -263,9 +303,6 @@ function fmtUptime(createdISO){
   if (h > 0) return `${h}h ${m%60}m`;
   return `${m}m ${s%60}s`;
 }
-function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
-
-/*** RENDER ***/
 function renderSummary(playersUniverse=null){
   const filtered = applyFilters(items);
   srvShownEl.textContent = filtered.length;
@@ -285,11 +322,10 @@ function renderSummary(playersUniverse=null){
       peakWhenEl.textContent = store.whenISO ? `(${new Date(store.whenISO).toLocaleString()})` : "";
     }
   }
+  sourceBadge.textContent = usingFallback ? "Data source: Roblox mirrors (cooling worker)" : "Data source: Cloudflare Worker";
 }
-
 function renderServers(listRaw=[]){
   const list = applyFilters(listRaw);
-
   if (!listRaw.length){
     tableEl.textContent = "No public servers found.";
     loadBtn.style.display = "none";
@@ -297,7 +333,6 @@ function renderServers(listRaw=[]){
     pageHint.textContent = "";
     return;
   }
-
   const rows = list.map(s=>{
     const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
     const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
@@ -317,7 +352,6 @@ function renderServers(listRaw=[]){
         <div class="net-join">${viewBtn} <button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
       </div>`;
   }).join("");
-
   tableEl.innerHTML = rows;
   const hasMore = !!nextCursor;
   loadBtn.style.display = hasMore ? "inline-flex" : "none";
@@ -325,47 +359,66 @@ function renderServers(listRaw=[]){
   pageHint.textContent = hasMore ? "More servers available" : "All servers loaded";
 }
 
-/*** BOOTSTRAP + POLL (with fallback to /servers if /summary 500s) ***/
+/* ========= Bootstrap & Poll with fallback ========= */
+async function loadFirstPage(placeId){
+  // If we’re cooling the worker, skip it and go direct.
+  if (now() < fallbackUntil) return buildSummaryFromDirect(placeId);
+  try{
+    const sum = await apiSummaryWorker(placeId);
+    usingFallback = false;
+    return { playersUniverse: sum.playersUniverse ?? null, servers: sum.servers || [], nextCursor: sum.nextCursor || null };
+  }catch(e){
+    // Worker failed (likely upstream 429) → fall back for 2 minutes
+    usingFallback = true;
+    fallbackUntil = now() + 2*60*1000;
+    return buildSummaryFromDirect(placeId);
+  }
+}
+async function loadMorePage(placeId, cursor){
+  if (!cursor) return { items:[], nextPageCursor:null };
+  if (usingFallback || now() < fallbackUntil) {
+    return apiServersDirect(placeId, cursor);
+  }
+  try{
+    const page = await apiServersWorker(placeId, cursor);
+    return { items: page.items || [], nextPageCursor: page.nextPageCursor || null };
+  }catch{
+    usingFallback = true;
+    fallbackUntil = now() + 2*60*1000;
+    return apiServersDirect(placeId, cursor);
+  }
+}
+
 async function bootstrapFirstPage(){
   loading = true;
   tableEl.textContent = "Loading servers…";
   try{
-    let summary = await fetchSummary(currentPlaceId);
-    // Fallback path: if summary failed, fetch first page directly so we have rows
-    if (!summary) {
-      const page = await fetchServers(currentPlaceId);
-      items = Array.isArray(page.items) ? page.items : [];
-      nextCursor = page.nextPageCursor || null;
-      populateRegionFilter(items);
-      renderSummary(null);
-      renderServers(items);
-      return;
-    }
+    const sum = await loadFirstPage(currentPlaceId);
     pulse(summaryEl);
-    items = Array.isArray(summary.servers) ? summary.servers : [];
-    nextCursor = summary.nextCursor || null;
+    items = Array.isArray(sum.servers) ? sum.servers : [];
+    nextCursor = sum.nextCursor || null;
     populateRegionFilter(items);
-    renderSummary(summary.playersUniverse ?? null);
+    renderSummary(sum.playersUniverse ?? null);
     renderServers(items);
   } finally { loading = false; }
 }
-
 async function pollFirstPage(){
   if (loading) return;
-  const summary = await fetchSummary(currentPlaceId);
-  if (!summary) return; // keep last good state
-  pulse(summaryEl);
-  const first = Array.isArray(summary.servers) ? summary.servers : [];
-  const map = new Map(items.map(i=>[i.id,i]));
-  first.forEach(i=>map.set(i.id,i));
-  items = Array.from(map.values());
-  nextCursor = summary.nextCursor || nextCursor;
-  populateRegionFilter(items);
-  renderSummary(summary.playersUniverse ?? null);
-  renderServers(items);
+  try{
+    const sum = await loadFirstPage(currentPlaceId);
+    pulse(summaryEl);
+    const first = Array.isArray(sum.servers) ? sum.servers : [];
+    const map = new Map(items.map(i=>[i.id,i]));
+    first.forEach(i=>map.set(i.id,i));
+    items = Array.from(map.values());
+    nextCursor = sum.nextCursor || nextCursor;
+    populateRegionFilter(items);
+    renderSummary(sum.playersUniverse ?? null);
+    renderServers(items);
+  }catch{/* ignore one-off */}
 }
 
-/*** EVENTS ***/
+/* ========= Events ========= */
 placeSelect.addEventListener("change", ()=>{
   currentPlaceId = placeSelect.value;
   items = []; nextCursor = null;
@@ -376,7 +429,7 @@ loadBtn.addEventListener("click", async ()=>{
   if (!nextCursor || loading) return;
   loading = true; loadBtn.textContent = "Loading…";
   try{
-    const page = await fetchServers(currentPlaceId, nextCursor);
+    const page = await loadMorePage(currentPlaceId, nextCursor);
     const newItems = Array.isArray(page.items)?page.items:[];
     nextCursor = page.nextPageCursor || null;
     const existing = new Set(items.map(i=>i.id));
@@ -390,7 +443,7 @@ loadAllBtn.addEventListener("click", async ()=>{
   loading = true; loadAllBtn.textContent = "Loading all…";
   try{
     while(nextCursor){
-      const page = await fetchServers(currentPlaceId, nextCursor);
+      const page = await loadMorePage(currentPlaceId, nextCursor);
       const newItems = Array.isArray(page.items)?page.items:[];
       nextCursor = page.nextPageCursor || null;
       const existing = new Set(items.map(i=>i.id));
@@ -413,7 +466,7 @@ fltNonEmpty.addEventListener("change", onFilterChange);
 fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; fltSearch.value=""; onFilterChange(); });
 fltSearch.addEventListener("input", onFilterChange);
 
-/*** MODAL (Players + Map) ***/
+/* ========= Modal (players + map) — unchanged visuals; avatar loader below ========= */
 const modalRoot = document.createElement("div");
 modalRoot.className = "net-modal-backdrop";
 modalRoot.id = "net-modal-root";
@@ -471,144 +524,84 @@ function openServerModal(jobId){
   clearInterval(modalTimer);
   modalTimer = setInterval(fetchAndRenderPlayers, 60000);
 }
-function closeServerModal(){
-  modalRoot.style.display = "none";
-  modalRoot.setAttribute("aria-hidden", "true");
-  clearInterval(modalTimer);
-  modalTimer = null;
-  modalJobId = null;
-}
+function closeServerModal(){ modalRoot.style.display="none"; modalRoot.setAttribute("aria-hidden","true"); clearInterval(modalTimer); modalTimer=null; modalJobId=null; }
 window.openServerModal = openServerModal;
 modalCloseBtn.addEventListener("click", closeServerModal);
-modalRoot.addEventListener("click", (e)=>{ if (e.target === modalRoot) closeServerModal(); });
+modalRoot.addEventListener("click", (e)=>{ if (e.target===modalRoot) closeServerModal(); });
 
 async function fetchPlayersForServer(placeId, jobId){
   const url = `${GAME_WORKER_BASE}/api/players?placeId=${placeId}&jobId=${jobId}`;
   return await fetchJSON(url, { retries: 1 });
 }
-
-function worldToMap(x, z, imgW, imgH){
-  const { worldMinX, worldMaxX, worldMinZ, worldMaxZ } = MAP_CFG;
-  const u = (x - worldMinX) / (worldMaxX - worldMinX);
-  const v = (z - worldMinZ) / (worldMaxZ - worldMinZ);
-  const px = Math.max(0, Math.min(imgW, u * imgW));
-  const py = Math.max(0, Math.min(imgH, (1 - v) * imgH));
-  return [px, py];
+function worldToMap(x,z,w,h){
+  const a = MAP_CFG; const u=(x-a.worldMinX)/(a.worldMaxX-a.worldMinX); const v=(z-a.worldMinZ)/(a.worldMaxZ-a.worldMinZ);
+  return [Math.max(0,Math.min(w,u*w)), Math.max(0,Math.min(h,(1-v)*h))];
 }
-function roleColor(role){
-  switch (String(role||"").toLowerCase()){
-    case "operator": return "#ffd54a";
-    case "transit_police":
-    case "transit police": return "#60a5fa";
-    default: return "#9ca3af";
-  }
-}
-
-/*** AVATAR HYDRATOR (retry + backoff + mirrors + fallback img) ***/
-const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v3";
-const RBX_AVATAR_TTL_MS = 24*60*60*1000;
-let _rbxAvatarCache = (()=>{ try{
-  const raw = localStorage.getItem(RBX_AVATAR_CACHE_KEY);
-  const obj = raw ? JSON.parse(raw) : { t:0, map:{} };
-  if (!obj.t || (Date.now()-obj.t) > RBX_AVATAR_TTL_MS) return { t:Date.now(), map:{} };
-  return obj;
-}catch{ return { t:Date.now(), map:{} }; }})();
-
-function saveAvatarCache(){ try{ localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); }catch{} }
-
-async function fetchThumbBatch(ids, size="48x48"){
-  const endpoints = [
-    `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`,
-    `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`,
-    `https://thumbnails.rprxy.xyz/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`,
-  ];
-  for (let i=0;i<endpoints.length;i++){
-    try{
-      const res = await fetch(endpoints[i], { cache:"no-store" });
-      if (res.status === 429){ await new Promise(r=>setTimeout(r, 800)); continue; }
-      if (!res.ok) throw new Error(String(res.status));
-      const j = await res.json();
-      const map = {};
-      (j.data||[]).forEach(d=> map[String(d.targetId)] = d.state==="Completed" ? d.imageUrl : null);
-      return map;
-    }catch(_){ /* try next */ }
-  }
-  // last resort: legacy per-user URL (may 404 for some, but we’ll attach onerror fallback per <img>)
-  const map = {}; ids.forEach(id => map[String(id)] = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`);
-  return map;
-}
-
-async function hydrateHeadshots(container=document, size="48x48"){
-  const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]'));
-  if (!nodes.length) return;
-  const ids = Array.from(new Set(nodes.map(n=>String(n.dataset.rbxUser).trim()).filter(Boolean)));
-  const need = ids.filter(id => !_rbxAvatarCache.map[id]);
-
-  // rate-limit friendly: batches of 25 with tiny delay between calls
-  while (need.length){
-    const chunk = need.splice(0, 25);
-    const map = await fetchThumbBatch(chunk, size);
-    Object.assign(_rbxAvatarCache.map, map);
-    await new Promise(r=>setTimeout(r, 200));
-  }
-  _rbxAvatarCache.t = Date.now(); saveAvatarCache();
-
-  nodes.forEach(img=>{
-    const id = String(img.dataset.rbxUser).trim();
-    const src = _rbxAvatarCache.map[id];
-    img.referrerPolicy = "no-referrer";
-    img.decoding = "async";
-    img.loading = img.loading || "lazy";
-    img.alt = img.alt || `Roblox avatar ${id}`;
-    img.src = src || `data:image/svg+xml;utf8,${encodeURIComponent(
-      "<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><circle cx='24' cy='24' r='24' fill='#e5e7eb'/><circle cx='24' cy='18' r='8' fill='#cbd5e1'/><rect x='10' y='30' width='28' height='12' rx='6' fill='#cbd5e1'/></svg>"
-    )}`;
-    // if legacy URL 404s, try another mirror once
-    img.onerror = ()=>{
-      img.onerror = null;
-      img.src = `https://tr.rbxcdn.com/30DAY-AvatarHeadshot-Png/48/48/AvatarHeadshot/Png/isCircular?userId=${id}`; // generic CDN pattern
-    };
+function roleColor(role){ role=String(role||"").toLowerCase(); if(role==="operator") return "#ffd54a"; if(role.includes("police")) return "#60a5fa"; return "#9ca3af"; }
+function renderMapDots(players){
+  const ctx = modalCanvas.getContext("2d");
+  const w = modalMapImg.naturalWidth || modalMapImg.width, h = modalMapImg.naturalHeight || modalMapImg.height;
+  modalCanvas.width = modalMapImg.clientWidth; modalCanvas.height = modalMapImg.clientHeight;
+  const sx = modalCanvas.width / w, sy = modalCanvas.height / h;
+  ctx.clearRect(0,0,modalCanvas.width, modalCanvas.height);
+  players.forEach(p=>{ if(!p.pos) return; const [px,py]=worldToMap(p.pos.x,p.pos.z,w,h); const dx=px*sx, dy=py*sy;
+    ctx.beginPath(); ctx.arc(dx,dy,6,0,Math.PI*2); ctx.fillStyle=roleColor(p.role); ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle="rgba(0,0,0,.4)"; ctx.stroke();
   });
 }
 
-/*** PLAYERS RENDERING ***/
+/* ===== Avatars (robust hydrator) ===== */
+const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v3";
+const RBX_AVATAR_TTL_MS = 24*60*60*1000;
+let _rbxAvatarCache = (()=>{ try{ const raw=localStorage.getItem(RBX_AVATAR_CACHE_KEY); const obj=raw?JSON.parse(raw):{t:0,map:{}}; if(!obj.t || (Date.now()-obj.t)>RBX_AVATAR_TTL_MS) return {t:Date.now(),map:{}}; return obj; }catch{ return {t:Date.now(),map:{}}; }})();
+function saveAvatarCache(){ try{ localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); }catch{} }
+async function fetchThumbBatch(ids, size="48x48"){
+  const eps = [
+    `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`,
+    `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`,
+    `https://thumbnails.rprxy.xyz/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`
+  ];
+  for (const u of eps){
+    try{
+      const r = await fetch(u, { cache:"no-store" });
+      if (r.status===429) { await new Promise(r=>setTimeout(r,700)); continue; }
+      if (!r.ok) throw 0;
+      const j = await r.json(); const map={};
+      (j.data||[]).forEach(d=>map[String(d.targetId)]=d.state==="Completed"?d.imageUrl:null);
+      return map;
+    }catch{}
+  }
+  const map={}; ids.forEach(id=>map[String(id)]=`https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`);
+  return map;
+}
+async function hydrateHeadshots(container=document, size="48x48"){
+  const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]')); if(!nodes.length) return;
+  const ids = Array.from(new Set(nodes.map(n=>String(n.dataset.rbxUser).trim()).filter(Boolean)));
+  const need = ids.filter(id=>!_rbxAvatarCache.map[id]);
+  while(need.length){ const chunk = need.splice(0,25); const map = await fetchThumbBatch(chunk,size); Object.assign(_rbxAvatarCache.map,map); await new Promise(r=>setTimeout(r,180)); }
+  _rbxAvatarCache.t=Date.now(); saveAvatarCache();
+  nodes.forEach(img=>{ const id=String(img.dataset.rbxUser).trim(); const src=_rbxAvatarCache.map[id];
+    img.referrerPolicy="no-referrer"; img.decoding="async"; img.loading=img.loading||"lazy"; img.alt=img.alt||`Roblox avatar ${id}`;
+    img.src = src || `data:image/svg+xml;utf8,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><circle cx='24' cy='24' r='24' fill='#e5e7eb'/><circle cx='24' cy='18' r='8' fill='#cbd5e1'/><rect x='10' y='30' width='28' height='12' rx='6' fill='#cbd5e1'/></svg>")}`;
+    img.onerror = ()=>{ img.onerror=null; img.src=`https://tr.rbxcdn.com/30DAY-AvatarHeadshot-Png/48/48/AvatarHeadshot/Png/isCircular?userId=${id}`; };
+  });
+}
+
 function renderPlayerList(players){
   if (!players.length){ modalList.textContent = "No players reported."; return; }
   const rows = players.map(p=>{
-    const roleCls = (p.role==="operator") ? "net-role-operator" :
-                    (String(p.role).toLowerCase().includes("police")) ? "net-role-police" : "net-role-passenger";
+    const roleCls = (p.role==="operator") ? "net-role-operator" : (String(p.role).toLowerCase().includes("police") ? "net-role-police" : "net-role-passenger");
     const topStats = Object.entries(p.stats||{}).slice(0,3).map(([k,v])=>`<span class="net-badge">${k}: ${v}</span>`).join(" ");
-    return `
-      <div class="net-list-item">
-        <img data-rbx-user="${p.id}" width="36" height="36" alt="avatar ${p.id}" style="border-radius:50%;border:1px solid var(--bd)">
-        <div style="flex:1">
-          <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
-          <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
-          <div class="net-hint">ID: ${p.id}</div>
-        </div>
-      </div>`;
+    return `<div class="net-list-item">
+      <img data-rbx-user="${p.id}" width="36" height="36" alt="avatar ${p.id}" style="border-radius:50%;border:1px solid var(--bd)">
+      <div style="flex:1">
+        <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
+        <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
+        <div class="net-hint">ID: ${p.id}</div>
+      </div>
+    </div>`;
   }).join("");
   modalList.innerHTML = rows;
   hydrateHeadshots(modalList, "48x48");
-}
-
-function renderMapDots(players){
-  const ctx = modalCanvas.getContext("2d");
-  const w = modalMapImg.naturalWidth || modalMapImg.width;
-  const h = modalMapImg.naturalHeight || modalMapImg.height;
-  modalCanvas.width = modalMapImg.clientWidth;
-  modalCanvas.height = modalMapImg.clientHeight;
-  const sx = modalCanvas.width / w;
-  const sy = modalCanvas.height / h;
-  ctx.clearRect(0,0,modalCanvas.width, modalCanvas.height);
-  players.forEach(p=>{
-    if (!p.pos) return;
-    const [px, py] = worldToMap(p.pos.x, p.pos.z, w, h);
-    const dx = px * sx, dy = py * sy;
-    ctx.beginPath(); ctx.arc(dx, dy, 6, 0, Math.PI*2);
-    ctx.fillStyle = roleColor(p.role); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.4)"; ctx.stroke();
-  });
 }
 
 async function fetchAndRenderPlayers(){
@@ -620,24 +613,7 @@ async function fetchAndRenderPlayers(){
   if (modalMapImg.complete) renderMapDots(players); else modalMapImg.onload = ()=>renderMapDots(players);
 }
 
-function openServerModal(jobId){
-  if (!jobId) return;
-  modalJobId = jobId;
-  modalJob.textContent = jobId.slice(0,8) + "…";
-  modalUpdated.textContent = "–";
-  modalList.textContent = "Loading players…";
-  modalRoot.style.display = "flex";
-  modalRoot.setAttribute("aria-hidden", "false");
-  fetchAndRenderPlayers().catch(()=>{ modalList.textContent = "Unable to load players right now."; });
-  clearInterval(modalTimer);
-  modalTimer = setInterval(fetchAndRenderPlayers, 60000);
-}
-function closeServerModal(){ modalRoot.style.display="none"; modalRoot.setAttribute("aria-hidden","true"); clearInterval(modalTimer); modalTimer=null; modalJobId=null; }
-window.openServerModal = openServerModal;
-document.getElementById("m-close").addEventListener("click", closeServerModal);
-modalRoot.addEventListener("click", (e)=>{ if (e.target===modalRoot) closeServerModal(); });
-
-/*** START ***/
+/* ========= Start ========= */
 bootstrapFirstPage();
 setInterval(pollFirstPage, 15000);
 </script>
