@@ -524,24 +524,32 @@
     }
   }
   function renderPlayerList(players) {
-    if (!players.length) { modalList.textContent = "No players reported."; return; }
-    const rows = players.map(p => {
-      const avatar = `https://www.roblox.com/headshot-thumbnail/image?userId=${p.id}&width=48&height=48&format=png`;
-      const roleCls = (p.role === "operator") ? "net-role-operator" :
-                      (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" : "net-role-passenger";
-      const topStats = Object.entries(p.stats || {}).slice(0,3).map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
-      return `
-        <div class="net-list-item">
-          <img src="${avatar}" alt="" width="36" height="36" style="border-radius:50%;border:1px solid var(--bd)">
-          <div style="flex:1">
-            <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
-            <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
-            <div class="net-hint">ID: ${p.id}</div>
-          </div>
-        </div>`;
-    }).join("");
-    modalList.innerHTML = rows;
-  }
+  if (!players.length) { modalList.textContent = "No players reported."; return; }
+  const rows = players.map(p => {
+    const roleCls =
+      (p.role === "operator") ? "net-role-operator" :
+      (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" :
+      "net-role-passenger";
+    const topStats = Object.entries(p.stats || {}).slice(0,3)
+      .map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
+    return `
+      <div class="net-list-item">
+        <!-- NOTE: no src here; the hydrator will fill it -->
+        <img data-rbx-user="${p.id}" width="36" height="36"
+             alt="avatar ${p.id}"
+             style="border-radius:50%;border:1px solid var(--bd)">
+        <div style="flex:1">
+          <div><strong>${p.name}</strong> <span class="net-badge ${roleCls}">${p.role||"passenger"}</span></div>
+          <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
+          <div class="net-hint">ID: ${p.id}</div>
+        </div>
+      </div>`;
+  }).join("");
+  modalList.innerHTML = rows;
+
+  // ✅ hydrate newly inserted <img data-rbx-user="...">
+  hydrateHeadshots(modalList, "48x48");
+}
   function renderMapDots(players) {
     const ctx = modalCanvas.getContext("2d");
     const w = modalMapImg.naturalWidth || modalMapImg.width;
