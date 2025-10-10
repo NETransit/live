@@ -432,11 +432,11 @@ const modalCloseBtn = document.getElementById("m-close");
 /* graceful map fallback if 404 */
 (function ensureMap(){
   const test = new Image();
-  test.onload = ()=>{ modalMapImg.src = "images/lower-mystic-map.png"; };
+  test.onload = ()=>{ modalMapImg.src = "lower-mystic-map.png"; };
   test.onerror = ()=>{ modalMapImg.src = `data:image/svg+xml;utf8,${encodeURIComponent(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='600'><rect width='100%' height='100%' fill='#f3f4f6'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='system-ui' font-size='18' fill='#6b7280'>Map image not found — add images/lower-mystic-map.png</text></svg>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='900' height='600'><rect width='100%' height='100%' fill='#f3f4f6'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='system-ui' font-size='18' fill='#6b7280'>Map image not found — add lower-mystic-map.png</text></svg>"
   )}`; };
-  test.src = "images/lower-mystic-map.png";
+  test.src = "lower-mystic-map.png";
 })();
 
 /* ---- players API (ingest worker) ---- */
