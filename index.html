@@ -7,18 +7,10 @@
   <meta name="description" content="Live Roblox server statistics for New England Transit: players, FPS, regions, and maps." />
   <meta name="robots" content="index,follow" />
   <style>
-    :root{
-      --bg:#ffffff; --fg:#0a0a0a; --muted:#50565c;
-      --card:#ffffff; --bd:rgba(0,0,0,.12); --accent:#ff7f00;
-    }
-    [data-theme="dark"]{
-      --bg:#0b1020; --fg:#e8eefc; --muted:#b8c2e0;
-      --card:#121832; --bd:rgba(255,255,255,.14); --accent:#ff7f00;
-    }
-
+    :root{ --bg:#ffffff; --fg:#0a0a0a; --muted:#50565c; --card:#ffffff; --bd:rgba(0,0,0,.12); --accent:#ff7f00; }
+    [data-theme="dark"]{ --bg:#0b1020; --fg:#e8eefc; --muted:#b8c2e0; --card:#121832; --bd:rgba(255,255,255,.14); --accent:#ff7f00; }
     body{margin:0;background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
     a{color:inherit}
-
     .net-wrap{max-width:1100px;margin:24px auto;padding:0 16px}
     .net-eyebrow{font-size:.9rem;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
     .net-h1{font-size:clamp(24px,3.2vw,40px);margin:.25rem 0 1rem;font-weight:800}
@@ -39,10 +31,8 @@
     .chip{display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--bd);border-radius:999px;font-size:.9rem}
     .net-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:10px 0}
     .theme-toggle{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;background:transparent;color:var(--fg);cursor:pointer}
-
     @keyframes netPulse{0%{box-shadow:0 0 0 0 rgba(255,127,0,.0)}50%{box-shadow:0 0 0 6px rgba(255,127,0,.15)}100%{box-shadow:0 0 0 0 rgba(255,127,0,0)}}
     .updating{animation:netPulse .6s ease-out 1}
-
     .net-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:9999}
     .net-modal{width:min(100%,1000px);max-height:90vh;overflow:auto;border:1px solid var(--bd);border-radius:14px;background:var(--card);padding:14px}
     .net-modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--bd);padding-bottom:8px;margin-bottom:10px}
@@ -57,7 +47,6 @@
     .net-map-wrap{position:relative;border:1px solid var(--bd);border-radius:10px;overflow:hidden}
     .net-map{display:block;width:100%;height:auto}
     .net-canvas{position:absolute;inset:0;pointer-events:none}
-
     @media (max-width:760px){
       .net-row,.net-head{grid-template-columns:1fr}
       .net-head{display:none}
@@ -94,7 +83,6 @@
       <option value="79519172222138">Lower Mystic (Public)</option>
       <option value="8731366500">Hub / Starting Place (Public)</option>
     </select>
-
     <label>Search:
       <input id="flt-search" type="text" placeholder="Search server id or region…">
     </label>
@@ -102,27 +90,19 @@
 
   <div class="net-filters">
     <label>Region:
-      <select id="flt-region">
-        <option value="">All</option>
-      </select>
+      <select id="flt-region"><option value="">All</option></select>
     </label>
     <label>Min FPS:
       <input id="flt-fps" type="number" step="1" min="0" placeholder="0">
     </label>
-    <label class="chip">
-      <input id="flt-nonempty" type="checkbox"> Only non-empty
-    </label>
+    <label class="chip"><input id="flt-nonempty" type="checkbox"> Only non-empty</label>
     <button id="flt-reset" class="btn ghost">Reset filters</button>
   </div>
 
   <div class="net-card" id="net-card-table">
-    <div class="net-head">
-      <div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div>Uptime</div><div></div>
-    </div>
+    <div class="net-head"><div>Server</div><div>Players</div><div>FPS</div><div>Region</div><div>Uptime</div><div></div></div>
     <div id="net-table" class="net-table">Loading servers…</div>
-
     <div id="net-fallback" style="display:none;margin-top:8px"></div>
-
     <div class="net-actions">
       <span class="net-hint" id="net-pagehint"></span>
       <button id="net-load" class="btn ghost" style="display:none">Load more</button>
@@ -132,20 +112,18 @@
 </section>
 
 <script>
-/* ===== Config ===== */
-const WORKER_BASE = "https://roproxy.contact-b46.workers.dev";
-const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev";
+/* ============ CONFIG ============ */
+const WORKER_BASE = "https://roproxy.contact-b46.workers.dev";   // ✅ your proxy
+const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev"; // ingest worker for /api/players
 const UNIVERSE_ID = "8731366500";
 const SERVER_TYPE = "Public";
 const JOIN_OPEN_NEW_TAB = false;
 const LOWER_MYSTIC_PLACE_ID = "79519172222138";
 
-/* Mirrors used if the Worker fails (CORS-friendly) */
-
-/* Map bounds (unchanged) */
+/* map bounds (optional for dots) */
 const MAP_CFG = { worldMinX:-1200, worldMaxX:1200, worldMinZ:-800, worldMaxZ:800 };
 
-/* ===== Elements ===== */
+/* ============ ELEMENTS ============ */
 const rootEl = document.getElementById("net-live");
 const themeBtn = document.getElementById("themeToggle");
 const placeSelect = document.getElementById("net-place");
@@ -166,21 +144,21 @@ const fltSearch = document.getElementById("flt-search");
 const fallbackBox = document.getElementById("net-fallback");
 const summaryEl = document.getElementById("net-summary");
 
-/* ===== Theme ===== */
+/* ============ THEME ============ */
 const savedTheme = localStorage.getItem("net-theme");
 const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
 setTheme(savedTheme || (prefersDark ? "dark" : "light"));
 themeBtn.addEventListener("click", ()=> setTheme(rootEl.dataset.theme === "dark" ? "light" : "dark"));
 function setTheme(m){ rootEl.dataset.theme = m; localStorage.setItem("net-theme", m); }
 
-/* ===== State ===== */
+/* ============ STATE ============ */
 let currentPlaceId = placeSelect.value;
 let items = [];
 let nextCursor = null;
 let loading = false;
 const filters = { region:"", minFps:0, nonEmpty:false, search:"" };
 
-/* ===== Peak tracker ===== */
+/* ============ PEAK ============ */
 const PEAK_KEY = "net_peak_universe";
 const peakStore = JSON.parse(localStorage.getItem(PEAK_KEY) || "{}");
 if (peakStore.val) {
@@ -188,64 +166,41 @@ if (peakStore.val) {
   peakWhenEl.textContent = `(${new Date(peakStore.whenISO).toLocaleString()})`;
 }
 
-/* ===== Generic fetch with timeout/retries ===== */
-async function fetchJSON(url, {timeoutMs=8000, retries=0, retryOn=[429,500]} = {}){
-  for (let i=0;i<=retries;i++){
-    const ac = new AbortController();
-    const t = setTimeout(()=>ac.abort(), timeoutMs);
-    try{
-      const res = await fetch(url, { cache:"no-store", signal: ac.signal });
-      clearTimeout(t);
-      if (!res.ok){
-        if (retryOn.includes(res.status) && i<retries){ await new Promise(r=>setTimeout(r, 400*(i+1))); continue; }
-        return null;
-      }
-      return await res.json();
-    }catch(e){
-      clearTimeout(t);
-      if (i===retries) return null;
-      await new Promise(r=>setTimeout(r, 400*(i+1)));
-    }
-  }
-  return null;
-}
-
-/* ===== API (Worker first) ===== */
+/* ============ API (via your proxy) ============ */
 async function fetchSummary(placeId) {
   const url = `${WORKER_BASE}/api/summary?universeId=${UNIVERSE_ID}&placeId=${placeId}&serverType=${SERVER_TYPE}`;
-  return fetchJSON(url, { retries: 1 });
+  try {
+    const res = await fetch(url, { cache:"no-store" });
+    if (!res.ok) throw new Error("summary " + res.status);
+    return res.json();
+  } catch (e) {
+    console.warn("summary failed:", e);
+    return null;
+  }
 }
 async function fetchServers(placeId, cursor = "") {
   const url = new URL(`${WORKER_BASE}/api/servers`);
   url.searchParams.set("placeId", placeId);
   url.searchParams.set("serverType", SERVER_TYPE);
   if (cursor) url.searchParams.set("cursor", cursor);
-  return fetchJSON(url.toString(), { retries: 1 });
-}
-
-/* ===== Fallback to Roblox mirrors when Worker fails ===== */
-async function serversViaMirrors(placeId, cursor=""){
-  for (const base of GAME_MIRRORS){
-    let url = `${base}/v1/games/${placeId}/servers/${SERVER_TYPE}?sortOrder=Asc&limit=100`;
-    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-    const j = await fetchJSON(url, { retries: 2 });
-    if (j && Array.isArray(j.data)) return { items: j.data, nextPageCursor: j.nextPageCursor || null };
+  try {
+    const res = await fetch(url.toString(), { cache:"no-store" });
+    if (!res.ok) throw new Error("servers " + res.status);
+    return res.json();
+  } catch (e) {
+    console.warn("servers failed:", e);
+    return { items:[], nextPageCursor:null };
   }
-  return { items:[], nextPageCursor:null };
-}
-async function summaryViaMirrors(placeId){
-  const first = await serversViaMirrors(placeId);
-  const totalPlayers = first.items.reduce((n,s)=>n+(s.playing||0),0);
-  return { playersUniverse: totalPlayers, servers: first.items, nextCursor: first.nextPageCursor || null };
 }
 
-/* ===== Join deep link + fallback ===== */
+/* ============ JOIN ============ */
 function showFallback(jobId, placeId) {
   const web = `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${jobId}`;
-  fallbackBox.innerHTML = `<div style="border:1px solid var(--bd);border-radius:10px;padding:10px">
-    Having trouble launching Roblox?
-    <button class="btn ghost" id="net-open-web">Open via web launcher</button>
-  </div>`;
+  fallbackBox.innerHTML = `
+    <div style="border:1px solid var(--bd);border-radius:10px;padding:10px">
+      Having trouble launching Roblox?
+      <button class="btn ghost" id="net-open-web">Open via web launcher</button>
+    </div>`;
   fallbackBox.style.display = "block";
   document.getElementById("net-open-web").onclick = () => {
     if (JOIN_OPEN_NEW_TAB) window.open(web, "_blank", "noopener"); else window.location.href = web;
@@ -266,7 +221,7 @@ function joinServer(placeId, jobId) {
 }
 window.joinServer = joinServer;
 
-/* ===== Filters ===== */
+/* ============ FILTERS / RENDER UTILS ============ */
 function applyFilters(list){
   const q = filters.search.trim().toLowerCase();
   return list.filter(s=>{
@@ -299,7 +254,7 @@ function fmtUptime(createdISO){
 }
 function pulse(el){ el.classList.add("updating"); setTimeout(()=>el.classList.remove("updating"), 600); }
 
-/* ===== Render ===== */
+/* ============ RENDER SUMMARY/TABLE ============ */
 function renderSummary(playersUniverse=null){
   const filtered = applyFilters(items);
   srvShownEl.textContent   = filtered.length;
@@ -322,6 +277,7 @@ function renderSummary(playersUniverse=null){
 }
 function renderServers(listRaw=[]){
   const list = applyFilters(listRaw);
+
   if (!listRaw.length){
     tableEl.textContent = "No public servers found.";
     loadBtn.style.display = "none";
@@ -329,6 +285,7 @@ function renderServers(listRaw=[]){
     pageHint.textContent = "";
     return;
   }
+
   const rows = list.map(s=>{
     const players = `${s.playing ?? 0} / ${s.maxPlayers ?? "?"}`;
     const fps = (typeof s.fps === "number") ? s.fps.toFixed(0) : "–";
@@ -348,45 +305,38 @@ function renderServers(listRaw=[]){
         <div class="net-join">${viewBtn} <button class="btn" onclick="joinServer('${currentPlaceId}','${id}')">Join</button></div>
       </div>`;
   }).join("");
+
   tableEl.innerHTML = rows;
+
   const hasMore = !!nextCursor;
   loadBtn.style.display = hasMore ? "inline-flex" : "none";
   loadAllBtn.style.display = hasMore ? "inline-flex" : "none";
   pageHint.textContent = hasMore ? "More servers available" : "All servers loaded";
 }
 
-/* ===== Bootstrap & Poll (with fallback to mirrors) ===== */
+/* ============ BOOTSTRAP + POLLING ============ */
 async function bootstrapFirstPage(){
-  try{
-    loading = true;
-    tableEl.textContent = "Loading servers…";
-
-    // Try the Worker first
-    let summary = await fetchSummary(currentPlaceId);
-
-    // If Worker fails or returns empty, try mirrors immediately so first paint isn't blank
-    if (!summary || !Array.isArray(summary.servers) || summary.servers.length === 0){
-      summary = await summaryViaMirrors(currentPlaceId);
-    }
-
+  loading = true;
+  tableEl.textContent = "Loading servers…";
+  const summary = await fetchSummary(currentPlaceId);
+  if (summary) {
     pulse(summaryEl);
     items = Array.isArray(summary.servers) ? summary.servers : [];
     nextCursor = summary.nextCursor || null;
     populateRegionFilter(items);
     renderSummary(summary.playersUniverse ?? null);
     renderServers(items);
-  } finally { loading = false; }
+  } else {
+    items = []; nextCursor = null;
+    renderSummary(null); renderServers([]);
+  }
+  loading = false;
 }
 async function pollFirstPage(){
   if (loading) return;
-
-  // Prefer Worker each tick; if it fails, fall back to mirrors for that tick only
-  let summary = await fetchSummary(currentPlaceId);
-  if (!summary) summary = await summaryViaMirrors(currentPlaceId);
-
+  const summary = await fetchSummary(currentPlaceId);
   if (!summary) return;
   pulse(summaryEl);
-
   const first = Array.isArray(summary.servers) ? summary.servers : [];
   const map = new Map(items.map(i=>[i.id,i]));
   first.forEach(i=>map.set(i.id,i));
@@ -397,38 +347,32 @@ async function pollFirstPage(){
   renderServers(items);
 }
 
-/* ===== Events ===== */
+/* ============ EVENTS ============ */
 placeSelect.addEventListener("change", ()=>{
   currentPlaceId = placeSelect.value;
   items = []; nextCursor = null;
   renderSummary(); renderServers(items);
   bootstrapFirstPage();
 });
-
-loadBtn.addEventListener("click", async ()=>{
+loadBtn.addEventListener("click", async function(){
   if (!nextCursor || loading) return;
-  const btn = loadBtn;
   try{
-    loading = true; btn.textContent = "Loading…";
-    let page = await fetchServers(currentPlaceId, nextCursor);
-    if (!page) page = await serversViaMirrors(currentPlaceId, nextCursor);
+    loading = true; this.textContent = "Loading…";
+    const page = await fetchServers(currentPlaceId, nextCursor);
     const newItems = Array.isArray(page.items)?page.items:[];
     nextCursor = page.nextPageCursor || null;
     const existing = new Set(items.map(i=>i.id));
     newItems.forEach(i=>{ if(!existing.has(i.id)) items.push(i); });
     populateRegionFilter(items);
     renderSummary(); renderServers(items);
-  } finally { btn.textContent = "Load more"; loading = false; }
+  } finally { this.textContent = "Load more"; loading = false; }
 });
-
-loadAllBtn.addEventListener("click", async ()=>{
+loadAllBtn.addEventListener("click", async function(){
   if (loading) return;
-  const btn = loadAllBtn;
   try{
-    loading = true; btn.textContent = "Loading all…";
+    loading = true; this.textContent = "Loading all…";
     while(nextCursor){
-      let page = await fetchServers(currentPlaceId, nextCursor);
-      if (!page) page = await serversViaMirrors(currentPlaceId, nextCursor);
+      const page = await fetchServers(currentPlaceId, nextCursor);
       const newItems = Array.isArray(page.items)?page.items:[];
       nextCursor = page.nextPageCursor || null;
       const existing = new Set(items.map(i=>i.id));
@@ -436,9 +380,8 @@ loadAllBtn.addEventListener("click", async ()=>{
     }
     populateRegionFilter(items);
     renderSummary(); renderServers(items);
-  } finally { btn.textContent = "Load all"; loading = false; }
+  } finally { this.textContent = "Load all"; loading = false; }
 });
-
 function onFilterChange(){
   filters.region = fltRegion.value;
   filters.minFps = Number(fltFPS.value || 0);
@@ -452,7 +395,7 @@ fltNonEmpty.addEventListener("change", onFilterChange);
 fltReset.addEventListener("click", ()=>{ fltRegion.value=""; fltFPS.value=""; fltNonEmpty.checked=false; fltSearch.value=""; onFilterChange(); });
 fltSearch.addEventListener("input", onFilterChange);
 
-/* ===== Modal (Players + Map) ===== */
+/* ============ MODAL (Players + Map) ============ */
 const modalRoot = document.createElement("div");
 modalRoot.className = "net-modal-backdrop";
 modalRoot.id = "net-modal-root";
@@ -486,6 +429,7 @@ const modalJob = document.getElementById("m-job");
 const modalUpdated = document.getElementById("m-updated");
 const modalCloseBtn = document.getElementById("m-close");
 
+/* graceful map fallback if 404 */
 (function ensureMap(){
   const test = new Image();
   test.onload = ()=>{ modalMapImg.src = "images/lower-mystic-map.png"; };
@@ -495,9 +439,148 @@ const modalCloseBtn = document.getElementById("m-close");
   test.src = "images/lower-mystic-map.png";
 })();
 
+/* ---- players API (ingest worker) ---- */
+async function fetchPlayersForServer(placeId, jobId) {
+  const url = `${GAME_WORKER_BASE}/api/players?placeId=${placeId}&jobId=${jobId}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("players API " + res.status);
+  return res.json();
+}
+
+/* ---- headshot hydrator using your proxy ---- */
+const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v3";
+const RBX_AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
+let _rbxAvatarCache = (() => {
+  try {
+    const raw = localStorage.getItem(RBX_AVATAR_CACHE_KEY);
+    const obj = raw ? JSON.parse(raw) : { t: 0, map: {} };
+    if (!obj.t || (Date.now() - obj.t) > RBX_AVATAR_TTL_MS) return { t: Date.now(), map: {} };
+    return obj;
+  } catch { return { t: Date.now(), map: {} }; }
+})();
+function saveAvatarCache(){ try { localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); } catch{} }
+
+async function fetchHeadshotsViaProxy(ids, size="48x48") {
+  const u = `${WORKER_BASE}/api/thumbs/headshots?userIds=${ids.join(",")}&size=${size}&isCircular=true`;
+  const r = await fetch(u, { cache:"no-store" });
+  if (!r.ok) throw new Error("thumbs " + r.status);
+  const j = await r.json();
+  const map = {};
+  (j.data || []).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
+  return map;
+}
+async function hydrateHeadshots(container = document, size = "48x48") {
+  const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]'));
+  if (!nodes.length) return;
+  const ids = Array.from(new Set(nodes.map(n => String(n.dataset.rbxUser).trim()).filter(Boolean)));
+  const need = ids.filter(id => !_rbxAvatarCache.map[id]);
+  while (need.length) {
+    const chunk = need.splice(0, 100);
+    try {
+      const map = await fetchHeadshotsViaProxy(chunk, size);
+      Object.assign(_rbxAvatarCache.map, map);
+    } catch (e) {
+      console.warn("headshot proxy failed:", e);
+      chunk.forEach(id => { _rbxAvatarCache.map[id] = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`; });
+    }
+  }
+  _rbxAvatarCache.t = Date.now();
+  saveAvatarCache();
+  nodes.forEach(img => {
+    const id = String(img.dataset.rbxUser).trim();
+    const src = _rbxAvatarCache.map[id];
+    img.referrerPolicy = "no-referrer";
+    img.decoding = "async";
+    img.loading = img.loading || "lazy";
+    img.alt = img.alt || `Roblox avatar ${id}`;
+    img.src = src;
+  });
+}
+
+/* ---- map projection helpers ---- */
+function worldToMap(x, z, imgW, imgH) {
+  const { worldMinX, worldMaxX, worldMinZ, worldMaxZ } = MAP_CFG;
+  const u = (x - worldMinX) / (worldMaxX - worldMinX);
+  const v = (z - worldMinZ) / (worldMaxZ - worldMinZ);
+  const px = Math.max(0, Math.min(imgW, u * imgW));
+  const py = Math.max(0, Math.min(imgH, (1 - v) * imgH));
+  return [px, py];
+}
+function roleColor(role) {
+  switch (String(role || "").toLowerCase()) {
+    case "operator": return "#ffd54a";
+    case "transit_police":
+    case "transit police": return "#60a5fa";
+    default: return "#9ca3af";
+  }
+}
+
+/* ---- players rendering ---- */
+function renderPlayerList(players) {
+  if (!players.length) { modalList.textContent = "No players reported."; return; }
+  const rows = players.map(p => {
+    const roleCls =
+      (p.role === "operator") ? "net-role-operator" :
+      (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" :
+      "net-role-passenger";
+    const topStats = Object.entries(p.stats || {}).slice(0,3)
+      .map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
+    const profileUrl = `https://www.roblox.com/users/${p.id}/profile`;
+    return `
+      <div class="net-list-item">
+        <a href="${profileUrl}" target="_blank" rel="noopener noreferrer" title="Open Roblox profile">
+          <img data-rbx-user="${p.id}" width="36" height="36"
+               alt="avatar ${p.id}"
+               style="border-radius:50%;border:1px solid var(--bd)">
+        </a>
+        <div style="flex:1">
+          <div>
+            <strong><a href="${profileUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit">${p.name}</a></strong>
+            <span class="net-badge ${roleCls}">${p.role||"passenger"}</span>
+          </div>
+          <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
+          <div class="net-hint">ID: ${p.id}</div>
+        </div>
+      </div>`;
+  }).join("");
+  modalList.innerHTML = rows;
+  hydrateHeadshots(modalList, "48x48");
+}
+function renderMapDots(players) {
+  const ctx = modalCanvas.getContext("2d");
+  const w = modalMapImg.naturalWidth || modalMapImg.width;
+  const h = modalMapImg.naturalHeight || modalMapImg.height;
+  modalCanvas.width = modalMapImg.clientWidth;
+  modalCanvas.height = modalMapImg.clientHeight;
+  const sx = modalCanvas.width / w;
+  const sy = modalCanvas.height / h;
+  ctx.clearRect(0,0,modalCanvas.width, modalCanvas.height);
+  players.forEach(p => {
+    if (!p.pos) return;
+    const [px, py] = worldToMap(p.pos.x, p.pos.z, w, h);
+    const dx = px * sx, dy = py * sy;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 6, 0, Math.PI*2);
+    ctx.fillStyle = roleColor(p.role);
+    ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.4)"; ctx.stroke();
+  });
+}
+
+/* ---- IMPORTANT: define this as a named function (hoisted) ---- */
+async function fetchAndRenderPlayers() {
+  if (!modalJobId) return;
+  const data = await fetchPlayersForServer(LOWER_MYSTIC_PLACE_ID, modalJobId);
+  const players = Array.isArray(data.players) ? data.players : [];
+  modalUpdated.textContent = data.updatedAtISO ? new Date(data.updatedAtISO).toLocaleTimeString() : "–";
+  renderPlayerList(players);
+  if (modalMapImg.complete) renderMapDots(players);
+  else modalMapImg.onload = () => renderMapDots(players);
+}
+
+/* ---- modal open/close ---- */
 let modalTimer = null;
 let modalJobId = null;
-
 function openServerModal(jobId) {
   if (!jobId) return;
   modalJobId = jobId;
@@ -518,137 +601,10 @@ function closeServerModal() {
   modalJobId = null;
 }
 window.openServerModal = openServerModal;
-modalCloseBtn.addEventListener("click", closeServerModal);
+document.getElementById("m-close").addEventListener("click", closeServerModal);
 modalRoot.addEventListener("click", (e)=>{ if (e.target === modalRoot) closeServerModal(); });
 
-async function fetchPlayersForServer(placeId, jobId) {
-  const url = `${GAME_WORKER_BASE}/api/players?placeId=${placeId}&jobId=${jobId}`;
-  const res = await fetch(url, { cache: "no-store" }).catch(()=>null);
-  if (!res || !res.ok) throw new Error("players API");
-  return res.json();
-}
-function worldToMap(x, z, imgW, imgH) {
-  const { worldMinX, worldMaxX, worldMinZ, worldMaxZ } = MAP_CFG;
-  const u = (x - worldMinX) / (worldMaxX - worldMinX);
-  const v = (z - worldMinZ) / (worldMaxZ - worldMinZ);
-  const px = Math.max(0, Math.min(imgW, u * imgW));
-  const py = Math.max(0, Math.min(imgH, (1 - v) * imgH));
-  return [px, py];
-}
-function roleColor(role) {
-  switch (String(role || "").toLowerCase()) {
-    case "operator": return "#ffd54a";
-    case "transit_police":
-    case "transit police": return "#60a5fa";
-    default: return "#9ca3af";
-  }
-}
-
-/* ---------- Avatar Hydration (unchanged from your version) ---------- */
-const RBX_AVATAR_CACHE_KEY = "rbx_headshots_v2";
-const RBX_AVATAR_TTL_MS = 24 * 60 * 60 * 1000;
-let _rbxAvatarCache = (() => {
-  try {
-    const raw = localStorage.getItem(RBX_AVATAR_CACHE_KEY);
-    const obj = raw ? JSON.parse(raw) : { t: 0, map: {} };
-    if (!obj.t || (Date.now() - obj.t) > RBX_AVATAR_TTL_MS) return { t: Date.now(), map: {} };
-    return obj;
-  } catch { return { t: Date.now(), map: {} }; }
-})();
-function saveAvatarCache() { try { localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); } catch {} }
-
-async function fetchHeadshotsCORS(ids, size = "48x48") {
-  // ✅ Use your proxy to safely get headshots (no CORS errors)
-  try {
-    const u = `https://roproxy.contact-b46.workers.dev/api/thumbs/headshots?userIds=${ids.join(",")}&size=${size}&isCircular=true`;
-    const r = await fetch(u, { cache: "no-store" });
-    if (r.ok) {
-      const j = await r.json();
-      const map = {};
-      (j.data || []).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
-      return map;
-    }
-  } catch (e) {
-    console.warn("proxy headshot fail:", e);
-  }
-
-  // fallback (rare)
-  const map = {};
-  ids.forEach(id => { map[id] = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`; });
-  return map;
-}
-async function hydrateHeadshots(container = document, size = "48x48") {
-  const nodes = Array.from(container.querySelectorAll('img[data-rbx-user]'));
-  if (!nodes.length) return;
-  const ids = Array.from(new Set(nodes.map(n => String(n.dataset.rbxUser).trim()).filter(Boolean)));
-  const need = ids.filter(id => !_rbxAvatarCache.map[id]);
-  while (need.length) {
-    const chunk = need.splice(0, 100);
-    const map = await fetchHeadshotsCORS(chunk, size);
-    Object.assign(_rbxAvatarCache.map, map);
-  }
-  _rbxAvatarCache.t = Date.now();
-  saveAvatarCache();
-  nodes.forEach(img => {
-    const id = String(img.dataset.rbxUser).trim();
-    const src = _rbxAvatarCache.map[id];
-    img.referrerPolicy = "no-referrer";
-    img.decoding = "async";
-    img.loading = img.loading || "lazy";
-    img.alt = img.alt || `Roblox avatar ${id}`;
-    if (src) {
-      img.src = src;
-      img.onerror = () => { img.onerror = null; img.src = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`; };
-    } else {
-      img.src = `data:image/svg+xml;utf8,${encodeURIComponent(
-        "<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><circle cx='24' cy='24' r='24' fill='#e5e7eb'/><circle cx='24' cy='18' r='8' fill='#cbd5e1'/><rect x='10' y='30' width='28' height='12' rx='6' fill='#cbd5e1'/></svg>"
-      )}`;
-    }
-  });
-}
-
-/* ---------- Players modal rendering ---------- */
-function renderPlayerList(players) {
-  if (!players.length) { modalList.textContent = "No players reported."; return; }
-
-  const rows = players.map(p => {
-    const profileUrl = `https://www.roblox.com/users/${p.id}/profile`;
-    const roleCls =
-      (p.role === "operator") ? "net-role-operator" :
-      (p.role === "transit_police" || p.role === "transit police") ? "net-role-police" :
-      "net-role-passenger";
-    const topStats = Object.entries(p.stats || {}).slice(0,3)
-      .map(([k,v]) => `<span class="net-badge">${k}: ${v}</span>`).join(" ");
-
-    return `
-      <div class="net-list-item">
-        <!-- Avatar clickable too -->
-        <a href="${profileUrl}" target="_blank" rel="noopener noreferrer" title="Open Roblox profile">
-          <img data-rbx-user="${p.id}" width="36" height="36"
-               alt="avatar ${p.id}"
-               style="border-radius:50%;border:1px solid var(--bd)">
-        </a>
-        <div style="flex:1">
-          <div>
-            <strong>
-              <a href="${profileUrl}" target="_blank" rel="noopener noreferrer"
-                 style="text-decoration:none;color:inherit">
-                ${p.name}
-              </a>
-            </strong>
-            <span class="net-badge ${roleCls}">${p.role||"passenger"}</span>
-          </div>
-          <div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">${topStats}</div>
-          <div class="net-hint">ID: ${p.id}</div>
-        </div>
-      </div>`;
-  }).join("");
-
-  modalList.innerHTML = rows;
-  hydrateHeadshots(modalList, "48x48"); // keep the headshot hydrator
-}
-
-/* ===== Start ===== */
+/* ============ START ============ */
 bootstrapFirstPage();
 setInterval(pollFirstPage, 15000);
 </script>
