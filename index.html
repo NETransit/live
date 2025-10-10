@@ -133,7 +133,7 @@
 
 <script>
 /* ===== Config ===== */
-const WORKER_BASE = "https://live.contact-b46.workers.dev";
+const WORKER_BASE = "https://roproxy.contact-b46.workers.dev";
 const GAME_WORKER_BASE = "https://game.contact-b46.workers.dev";
 const UNIVERSE_ID = "8731366500";
 const SERVER_TYPE = "Public";
@@ -141,10 +141,6 @@ const JOIN_OPEN_NEW_TAB = false;
 const LOWER_MYSTIC_PLACE_ID = "79519172222138";
 
 /* Mirrors used if the Worker fails (CORS-friendly) */
-const GAME_MIRRORS = [
-  "https://games.roproxy.com",
-  "https://games.rprxy.xyz",
-  "https://games.roproxy.dev"
 ];
 
 /* Map bounds (unchanged) */
@@ -562,29 +558,24 @@ let _rbxAvatarCache = (() => {
 })();
 function saveAvatarCache() { try { localStorage.setItem(RBX_AVATAR_CACHE_KEY, JSON.stringify(_rbxAvatarCache)); } catch {} }
 
-async function fetchHeadshotsCORS(ids, size="48x48") {
+async function fetchHeadshotsCORS(ids, size = "48x48") {
+  // ✅ Use your proxy to safely get headshots (no CORS errors)
   try {
-    const u = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`;
-    const r = await fetch(u, { cache:"no-store" });
+    const u = `https://roproxy.contact-b46.workers.dev/api/thumbs/headshots?userIds=${ids.join(",")}&size=${size}&isCircular=true`;
+    const r = await fetch(u, { cache: "no-store" });
     if (r.ok) {
       const j = await r.json();
       const map = {};
-      (j.data||[]).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
+      (j.data || []).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
       return map;
     }
-  } catch {}
-  try {
-    const u = `https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${ids.join(",")}&size=${size}&format=Png&isCircular=true`;
-    const r = await fetch(u, { cache:"no-store" });
-    if (r.ok) {
-      const j = await r.json();
-      const map = {};
-      (j.data||[]).forEach(d => map[String(d.targetId)] = d.state === "Completed" ? d.imageUrl : null);
-      return map;
-    }
-  } catch {}
+  } catch (e) {
+    console.warn("proxy headshot fail:", e);
+  }
+
+  // fallback (rare)
   const map = {};
-  ids.forEach(id => { map[String(id)] = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`; });
+  ids.forEach(id => { map[id] = `https://www.roblox.com/headshot-thumbnail/image?userId=${id}&width=48&height=48&format=png`; });
   return map;
 }
 async function hydrateHeadshots(container = document, size = "48x48") {
